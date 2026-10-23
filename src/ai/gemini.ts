@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import type { Schema } from '@google/genai';
 import { AppError } from '../lib/AppError.js';
 
@@ -12,6 +12,8 @@ export interface GenerateJsonParams {
   systemInstruction: string;
   contents: GeminiContent[];
   temperature: number;
+  // 추론(thinking) 양. 지정하지 않으면 모델 기본값을 쓴다. (gemini-3.x 는 MINIMAL 을 지원하지 않아 LOW 가 가장 낮다)
+  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
   responseSchema: unknown;
   timeoutMs: number;
 }
@@ -44,6 +46,7 @@ export function getGeminiClient(): GeminiClient {
             temperature: params.temperature,
             responseMimeType: 'application/json',
             responseSchema: params.responseSchema as Schema,
+            ...(params.thinkingLevel && { thinkingConfig: { thinkingLevel: ThinkingLevel[params.thinkingLevel] } }),
             abortSignal: AbortSignal.timeout(params.timeoutMs),
             httpOptions: { timeout: params.timeoutMs },
           },

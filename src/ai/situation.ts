@@ -7,14 +7,15 @@ import type { PersonaScores } from '../persona/types.js';
 import type { SupervisorRow } from '../services/supervisorMapper.js';
 import type { GeminiClient, GeminiContent } from './gemini.js';
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_MODEL = 'gemini-3.8-flash';
 
-// 기본은 gemini-2.5-flash. 키/계정에서 이 모델을 쓸 수 없을 때 GEMINI_MODEL 로 바꿀 수 있다.
+// 기본은 gemini-3.8-flash. (gemini-2.5-* 는 신규 프로젝트에서 막혀 있다.) GEMINI_MODEL 로 바꿀 수 있다.
 export function getModel(): string {
   return process.env.GEMINI_MODEL || DEFAULT_MODEL;
 }
 export const TEMPERATURE = 0.4;
 export const TIMEOUT_MS = 30_000;
+export const THINKING_LEVEL = 'LOW';
 export const MAX_HISTORY = 10;
 
 const RETRY_INSTRUCTION = '위 상사 프로필을 근거로 persona_basis를 채워서 다시 답하라';
@@ -135,6 +136,7 @@ export async function askSituation(input: AskSituationInput, client: GeminiClien
       temperature: TEMPERATURE,
       responseSchema,
       timeoutMs: TIMEOUT_MS,
+      thinkingLevel: THINKING_LEVEL,
     });
 
   const first = parseAnswer(await call(contents));
