@@ -3,6 +3,8 @@ import * as missionRepository from '../repositories/missionRepository.js';
 import type { MissionRow, NewMission } from '../repositories/missionRepository.js';
 import { DEFAULT_XP, todayKst } from './missionValidation.js';
 import type { MissionCreateInput } from './missionValidation.js';
+import * as statsService from './statsService.js';
+import type { AwardResult } from './statsService.js';
 
 export interface Mission {
   id: string;
@@ -24,6 +26,8 @@ export interface MissionDoneResult {
   mission: Mission;
   // done 값이 실제로 바뀌었는지. (경험치 지급은 xp-streak 에서 이 값으로 중복 지급을 막는다)
   changed: boolean;
+  // 경험치 변화 (changed 가 false 면 null). 체크하면 +xp, 해제하면 -xp
+  reward: AwardResult | null;
 }
 
 // 오늘 미션이 하나도 없을 때 넣는 기본 미션. 일기 AI 분석이 붙으면 그 결과로 미션이 추가된다.
@@ -70,10 +74,14 @@ export async function create(userId: string, input: MissionCreateInput): Promise
 
 export async function setDone(userId: string, id: string, done: boolean): Promise<MissionDoneResult> {
   const updated = await missionRepository.setDoneIfChanged(userId, id, done);
-  if (updated) return { mission: toMission(updated), changed: true };
+  if (updated) {
+    // 실제로 바뀐 경우만 경험치를 준다. 해제하면 같은 만큼 되돌려서 체크/해제 반복으로 경험치를 쌓을 수 없다.
+    const reward = await statsService.addXp(userId, done ? updated.xp : -updated.xp);
+    return { mission: toMission(updated), changed: true, reward };
+  }
   const current = await missionRepository.findOwned(userId, id);
   if (!current) notFound();
-  return { mission: toMission(current), changed: false };
+  return { mission: toMission(current), changed: false, reward: null };
 }
 
 export async function remove(userId: string, id: string): Promise<void> {
