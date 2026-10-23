@@ -11,7 +11,7 @@ import type { BossKey } from './fixtures.js';
 import { judgeCase } from './judge.js';
 import type { JudgeVerdicts } from './judge.js';
 import { buildReport } from './report.js';
-import { runAll, withBackoff } from './run.js';
+import { runAll, withBackoff, withPacing } from './run.js';
 
 const OUT_DIR = join(process.cwd(), 'eval-results');
 
@@ -19,6 +19,8 @@ interface Options {
   judge: boolean;
   only: number[] | null;
   boss: BossKey | null;
+  // 호출 시작 간격(ms). 429 가 나면 늘린다.
+  interval: number;
 }
 
 function fail(message: string): never {
@@ -27,7 +29,7 @@ function fail(message: string): never {
 }
 
 function parseArgs(argv: string[]): Options {
-  const options: Options = { judge: false, only: null, boss: null };
+  const options: Options = { judge: false, only: null, boss: null, interval: 0 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--judge') {
@@ -43,6 +45,10 @@ function parseArgs(argv: string[]): Options {
       const value = argv[++i] as BossKey;
       if (!BOSS_KEYS.includes(value)) fail(`--boss 는 ${BOSS_KEYS.join('|')} 중 하나여야 해요`);
       options.boss = value;
+    } else if (arg === '--interval') {
+      const value = Number(argv[++i]);
+      if (!Number.isFinite(value) || value < 0) fail('--interval 에는 0 이상의 밀리초 값을 넣어주세요');
+      options.interval = value;
     } else {
       fail(`알 수 없는 옵션: ${arg}`);
     }
@@ -56,7 +62,7 @@ async function main() {
 
   const cases: EvalCase[] = CASES.filter((c) => !options.only || options.only.includes(c.id));
   const bosses = BOSSES.filter((b) => !options.boss || b.key === options.boss);
-  const client = getGeminiClient();
+  const client = withPacing(getGeminiClient(), options.interval);
   const model = getModel();
   const startedAt = new Date().toISOString();
 

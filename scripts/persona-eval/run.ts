@@ -39,6 +39,21 @@ export function withBackoff(inner: GeminiClient, onCall?: () => void): GeminiCli
   };
 }
 
+// 호출 시작 간격을 intervalMs 이상으로 벌려 요청 한도(429)에 걸리지 않게 한다. 0 이면 제한 없음.
+export function withPacing(inner: GeminiClient, intervalMs: number): GeminiClient {
+  if (intervalMs <= 0) return inner;
+  let nextSlot = 0;
+  return {
+    async generateJson(params) {
+      const now = Date.now();
+      const start = Math.max(now, nextSlot);
+      nextSlot = start + intervalMs;
+      if (start > now) await sleep(start - now);
+      return inner.generateJson(params);
+    },
+  };
+}
+
 async function runOne(evalCase: EvalCase, boss: Boss, client: GeminiClient): Promise<CallResult> {
   let modelCalls = 0;
   const start = Date.now();

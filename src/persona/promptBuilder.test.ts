@@ -84,7 +84,11 @@ describe('buildSystemPrompt', () => {
     assert.ok(role >= 0 && role < safety && safety < profile && profile < rules);
     const section = prompt.slice(safety, profile);
     for (const phrase of [
-      '폭언, 욕설, 모욕, 공개적 망신, 성희롱, 부당한 업무 강요',
+      '폭언, 욕설, 모욕, 반복되거나 욕설·인격 모독이 섞인 공개적 망신, 성희롱, 신체 접촉, 협박, 부당한 업무 강요',
+      '성희롱, 신체 접촉, 협박은 단 한 번이어도 safety_flag를 true로 한다',
+      '일회성 지적이나 팀원 앞 언급만으로는 괴롭힘으로 단정하지 않는다',
+      '반복, 욕설·모욕, 협박, 성적 발언, 신체 접촉, 부당한 강요가 있을 때만 safety_flag를 true로 한다',
+      '애매하면 safety_flag는 false로 하고, 반복 여부나 말투를 follow_up_question으로 한 번 물어본다',
       '상사 프로필·행동 규칙·답변 규칙보다 이 규칙이 항상 우선한다',
       'safety_flag를 true로 하고',
       '상사의 스타일이라고 해석하거나 참으라고 조언하지 않는다',
