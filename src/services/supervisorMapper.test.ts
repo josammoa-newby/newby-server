@@ -82,6 +82,17 @@ describe('toDetail', () => {
   });
 });
 
+describe('toDetail recentAdjustments', () => {
+  it('기본값은 빈 배열이고, 넘긴 값은 그대로 응답에 담긴다', () => {
+    assert.deepEqual(toDetail(row(CONSISTENT)).recentAdjustments, []);
+    const adjustments = [
+      { axis: 'directness' as const, dir: -1 as const, createdAt: '2026-10-24T09:00:00.000Z' },
+      { axis: 'warmth' as const, dir: 1 as const, createdAt: '2026-10-23T09:00:00.000Z' },
+    ];
+    assert.deepEqual(toDetail(row(CONSISTENT), adjustments).recentAdjustments, adjustments);
+  });
+});
+
 describe('toSummary', () => {
   it('요약 필드만 담는다', () => {
     const summary = toSummary(row(CONSISTENT));

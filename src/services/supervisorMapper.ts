@@ -36,6 +36,13 @@ export interface AxisView {
   consistency: number;
 }
 
+// 최근 피드백으로 점수가 보정된 기록 (applied=true 인 피드백)
+export interface Adjustment {
+  axis: Axis;
+  dir: 1 | -1;
+  createdAt: string;
+}
+
 export interface SupervisorDetail {
   id: string;
   nickname: string;
@@ -54,6 +61,7 @@ export interface SupervisorDetail {
   valuesText: string | null;
   examples: Example[];
   learnedNotes: string[];
+  recentAdjustments: Adjustment[];
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -76,7 +84,7 @@ function effectiveScores(row: Pick<SupervisorRow, 'scores' | 'score_adjust'>): P
   return Object.keys(adjust).length > 0 ? applyAdjust(row.scores, adjust) : row.scores;
 }
 
-export function toDetail(row: SupervisorRow): SupervisorDetail {
+export function toDetail(row: SupervisorRow, recentAdjustments: Adjustment[] = []): SupervisorDetail {
   const persona = effectiveScores(row);
 
   const scores = {} as Record<Axis, AxisView | null>;
@@ -114,6 +122,7 @@ export function toDetail(row: SupervisorRow): SupervisorDetail {
     valuesText: row.values_text,
     examples: row.examples,
     learnedNotes: row.learned_notes,
+    recentAdjustments,
     isDefault: row.is_default,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
