@@ -4,6 +4,7 @@ import { requireAuth } from '../middlewares/auth.js';
 import * as authService from '../services/authService.js';
 import {
   validateLogin,
+  validateRefresh,
   validateSignup,
   validateUsername,
 } from '../services/authValidation.js';
@@ -22,6 +23,10 @@ router.post('/signup', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   sendSuccess(res, await authService.login(validateLogin(req.body)));
+});
+
+router.post('/refresh', async (req, res) => {
+  sendSuccess(res, await authService.refresh(validateRefresh(req.body)));
 });
 
 router.get('/me', requireAuth, async (req, res) => {

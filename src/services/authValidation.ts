@@ -16,6 +16,10 @@ export interface LoginInput {
   password: string;
 }
 
+export interface RefreshInput {
+  refreshToken: string;
+}
+
 const USERNAME_REGEX = /^[a-z0-9_]{4,20}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_NAME = 50;
@@ -107,4 +111,12 @@ export function validateLogin(body: unknown): LoginInput {
     invalid('아이디와 비밀번호를 입력해주세요');
   }
   return { username: b.username.trim(), password: b.password };
+}
+
+export function validateRefresh(body: unknown): RefreshInput {
+  const b = asObject(body);
+  if (typeof b.refreshToken !== 'string' || b.refreshToken.trim() === '') {
+    invalid('refreshToken을 입력해주세요');
+  }
+  return { refreshToken: b.refreshToken.trim() };
 }
