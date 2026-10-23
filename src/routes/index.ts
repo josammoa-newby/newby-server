@@ -5,6 +5,8 @@ import diaries from './diaries.js';
 import health from './health.js';
 import me from './me.js';
 import missions from './missions.js';
+import persona from './persona.js';
+import supervisors from './supervisors.js';
 
 const router = Router();
 
@@ -13,5 +15,7 @@ router.use('/auth', auth);
 router.use('/diaries', requireAuth, diaries);
 router.use('/missions', requireAuth, missions);
 router.use('/me', requireAuth, me);
+router.use('/persona', requireAuth, persona);
+router.use('/supervisors', requireAuth, supervisors);
 
 export default router;

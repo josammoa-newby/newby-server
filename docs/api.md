@@ -277,6 +277,207 @@ Invoke-RestMethod -Method Patch -Uri "http://localhost:3000/api/me" `
 }
 ```
 
+## GET /api/persona/questions
+
+`Authorization: Bearer <accessToken>` 헤더가 필요합니다. 상사 성향 질문지를 돌려줍니다. 채점 정보(축, 역채점, 점수)는 포함되지 않습니다.
+
+| 쿼리 | 설명 |
+| --- | --- |
+| mode | `quick`(기본, 12문항) 또는 `full`(28문항). 그 외 값은 400 |
+
+```powershell
+Invoke-RestMethod "http://localhost:3000/api/persona/questions?mode=quick" `
+  -Headers @{ Authorization = "Bearer $token" }
+```
+
+성공 (200) — 리커트 문항은 `{ id, text }`(1~5 정수로 응답), 상황형 문항은 `options`가 있고 `key`(`a`~`d`)로 응답합니다.
+
+```json
+{
+  "success": true,
+  "data": [
+    { "id": "L1", "text": "마음에 안 드는 게 있으면 그 자리에서 바로 말한다" },
+    {
+      "id": "S1",
+      "text": "네가 낸 기획안이 별로일 때 상사 반응은?",
+      "options": [
+        { "key": "a", "text": "\"이건 방향이 틀렸어\"라고 바로 말한다" },
+        { "key": "b", "text": "좋은 점을 먼저 말하고 고칠 점을 말한다" }
+      ]
+    }
+  ],
+  "error": null
+}
+```
+
+실패 (400) — `mode` 가 `quick`/`full` 이 아닌 경우 (`VALIDATION_ERROR`)
+
+## POST /api/supervisors
+
+상사를 등록합니다. 사용자의 첫 상사는 자동으로 기본 상사(`isDefault: true`)가 됩니다. `Authorization: Bearer <accessToken>` 헤더가 필요합니다.
+
+| 필드 | 필수 | 규칙 |
+| --- | --- | --- |
+| nickname | O | 1~20자 |
+| answers | O | 문항 id → 값. 리커트 1~5 정수, 상황형 `a`~`d`. `mode` 의 필수 문항이 모두 있어야 합니다 |
+| mode | | `quick`(기본) / `full` |
+| channel | | `messenger`(기본) / `face` / `email` |
+| position | | 50자 이하 |
+| catchphrases | | 문자열 배열, 3개 이하, 각 30자 이하 |
+| angerSignals / happySignals / dislikes / valuesText | | 각 300자 이하 |
+| examples | | `{ said, meant }` 배열, 3개 이하, 각 200자 이하 |
+
+이 목록에 없는 필드(`id`, `user_id`, `scores` 등)가 있으면 400 입니다.
+
+```powershell
+$body = @{
+  nickname = "김팀장"; position = "팀장"; channel = "messenger"; mode = "quick"
+  answers = @{ L1 = 5; L2 = 1; L5 = 5; L6 = 1; L9 = 5; L10 = 1; L13 = 1; L14 = 5; S1 = "a"; S2 = "a"; S3 = "a"; S4 = "a" }
+  catchphrases = @("그래서 결론이 뭐야?")
+  examples = @(@{ said = "한번 검토해보자"; meant = "고치라는 뜻" })
+} | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/supervisors" `
+  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body $body
+```
+
+성공 (201) — 상사 상세 (아래 `GET /api/supervisors/:id` 와 같은 모양)
+
+실패 (400) — 누락된 문항이 있으면 문항 id 를 메시지에 모두 알려줍니다.
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "VALIDATION_ERROR", "message": "응답하지 않은 문항이 있어요: L1, S4" }
+}
+```
+
+## GET /api/supervisors/:id
+
+`Authorization: Bearer <accessToken>` 헤더가 필요합니다. 내 상사만 조회됩니다.
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "5b1c...",
+    "nickname": "김팀장",
+    "position": "팀장",
+    "channel": "messenger",
+    "mode": "quick",
+    "code": "DCRT",
+    "typeName": "레이더형 팀장",
+    "scores": {
+      "directness": { "score": 80, "letter": "D", "strength": "strong", "consistency": 0.95 },
+      "control": { "score": 90, "letter": "C", "strength": "strong", "consistency": 0.95 },
+      "reporting": { "score": 90, "letter": "R", "strength": "strong", "consistency": 0.95 },
+      "warmth": { "score": 90, "letter": "T", "strength": "strong", "consistency": 0.95 },
+      "speed": null,
+      "stability": null
+    },
+    "needsCheck": [],
+    "topRules": ["말을 돌리지 않는다. ...", "진행 상황을 수시로 알고 싶어한다. ...", "결론부터 말해야 한다. ..."],
+    "catchphrases": ["그래서 결론이 뭐야?"],
+    "angerSignals": null,
+    "happySignals": null,
+    "dislikes": null,
+    "valuesText": null,
+    "examples": [{ "said": "한번 검토해보자", "meant": "고치라는 뜻" }],
+    "learnedNotes": [],
+    "isDefault": true,
+    "createdAt": "2026-10-24T09:00:00.000Z",
+    "updatedAt": "2026-10-24T09:00:00.000Z"
+  },
+  "error": null
+}
+```
+
+- `scores` 는 보정값(`score_adjust`)이 있으면 적용한 값입니다. 측정되지 않은 축(빠른 모드의 `speed`, `stability`)은 `null` 입니다.
+- `needsCheck` 는 응답이 엇갈려(`consistency < 0.5`) 확인이 필요한 축 이름 배열입니다.
+- `topRules` 는 뚜렷한 축(`strong`)의 행동 규칙을 우선 최대 3개, 부족하면 약한 축(`mild`)으로 채웁니다. 조합 규칙은 제외됩니다.
+
+실패 (404) — 없는 id, 남의 상사, 잘못된 id 형식은 모두 같은 응답입니다.
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "SUPERVISOR_NOT_FOUND", "message": "상사 정보를 찾을 수 없어요" }
+}
+```
+
+## GET /api/supervisors
+
+`Authorization: Bearer <accessToken>` 헤더가 필요합니다. 내 상사 목록을 최신순으로 돌려줍니다.
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "5b1c...",
+      "nickname": "김팀장",
+      "position": "팀장",
+      "channel": "messenger",
+      "code": "DCRT",
+      "typeName": "레이더형 팀장",
+      "isDefault": true,
+      "createdAt": "2026-10-24T09:00:00.000Z"
+    }
+  ],
+  "error": null
+}
+```
+
+## PATCH /api/supervisors/:id
+
+내 상사를 부분 수정합니다. `Authorization: Bearer <accessToken>` 헤더가 필요하고, 보낸 필드만 수정됩니다.
+
+| 필드 | 규칙 |
+| --- | --- |
+| nickname / position / channel | `POST` 와 같음. `position` 은 `null` 로 비울 수 있음 |
+| catchphrases / angerSignals / happySignals / dislikes / valuesText / examples | `POST` 와 같음. `null`/빈 문자열/빈 배열로 비울 수 있음 |
+| answers | 기존 `answers` 에 문항 id 단위로 병합. 병합 결과를 검증한 뒤 다시 채점합니다 |
+| mode | `quick` → `full` 승격만 가능. `full` → `quick` 은 400 |
+
+- `answers` 나 `mode` 가 바뀌면 `scores`, `code` 를 다시 계산합니다. 보정값(`score_adjust`)은 유지됩니다.
+- `quick` → `full` 로 올릴 때는 빠진 문항(`L3` 등)의 응답을 `answers` 에 같이 보내야 합니다.
+- 허용 목록 밖 필드(`id`, `user_id` 등)와 빈 body 는 400 입니다.
+
+```powershell
+$body = @{ nickname = "박팀장"; angerSignals = "말수가 줄어든다" } | ConvertTo-Json
+Invoke-RestMethod -Method Patch -Uri "http://localhost:3000/api/supervisors/$id" `
+  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body $body
+```
+
+성공 (200) — 수정된 상사 상세 (`GET /api/supervisors/:id` 와 같은 모양)
+
+실패 (400)
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "VALIDATION_ERROR", "message": "정밀 모드에서 빠른 모드로 되돌릴 수 없어요" }
+}
+```
+
+실패 (401) — 위 모든 엔드포인트에서 토큰이 없거나 유효하지 않은 경우
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "UNAUTHORIZED", "message": "로그인이 필요해요" }
+}
+```
+
+실패 (404) — `SUPERVISOR_NOT_FOUND` (위와 같은 응답)
+
 ## 인증이 필요한 다른 API 에서 재사용
 
 ```ts
