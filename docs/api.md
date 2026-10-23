@@ -478,6 +478,128 @@ Invoke-RestMethod -Method Patch -Uri "http://localhost:3000/api/supervisors/$id"
 
 실패 (404) — `SUPERVISOR_NOT_FOUND` (위와 같은 응답)
 
+## POST /api/sessions
+
+내 상사와의 AI 상담 세션을 만들고, AI 첫 인사 메시지를 함께 돌려줍니다. `Authorization: Bearer <accessToken>` 헤더가 필요합니다.
+
+요청 body: `{ "supervisorId": "5b1c..." }`
+
+```powershell
+$body = @{ supervisorId = $supervisorId } | ConvertTo-Json
+$res = Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/sessions" `
+  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body $body
+$sessionId = $res.data.session.id
+```
+
+성공 (201)
+
+```json
+{
+  "success": true,
+  "data": {
+    "session": { "id": "9fba...", "supervisorId": "5b1c...", "title": "김팀장 상담", "createdAt": "2026-10-24T09:00:00.000Z" },
+    "messages": [
+      {
+        "id": "3ccd...",
+        "role": "ai",
+        "text": "김팀장이랑 무슨 일 있었어? 상사가 한 말 그대로 적어주면 더 정확해!",
+        "payload": null,
+        "createdAt": "2026-10-24T09:00:00.000Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+실패 (400) — `supervisorId` 가 없거나 문자열이 아닌 경우 (`VALIDATION_ERROR`)
+
+실패 (404) — 내 상사가 아니거나 없는 상사, 잘못된 id 형식 (`SUPERVISOR_NOT_FOUND`)
+
+## POST /api/sessions/:id/messages
+
+상황을 입력하면 상사 프로필(성향 규칙, 사용자가 알려준 정보, 학습 메모)과 최근 대화 10개를 바탕으로 AI 가 답합니다. `Authorization: Bearer <accessToken>` 헤더가 필요하고, 사용자당 분당 10회로 제한됩니다.
+
+요청 body: `{ "text": "보고서 냈더니 상사가 '음, 한번 더 검토해보자'라고 했어" }` — 앞뒤 공백을 제거한 뒤 1~1000자
+
+성공 (200) — `aiMessage.text` 는 `intent` 와 `recommended_action` 을 한 줄씩 이은 요약이고, 전체 답변은 `aiMessage.payload` 에 있습니다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "userMessage": { "id": "a1...", "role": "user", "text": "보고서 냈더니 ...", "payload": null, "createdAt": "2026-10-24T09:01:00.000Z" },
+    "aiMessage": {
+      "id": "b2...",
+      "role": "ai",
+      "text": "실제로 다시 검토해보라는 뜻이야.\n지적받은 부분을 수정해서 다시 보고해.",
+      "payload": {
+        "intent": "실제로 다시 검토해보라는 뜻이야.",
+        "confidence": "high",
+        "persona_basis": ["D 직설형: 표현을 그대로 받아들여도 됨"],
+        "recommended_action": "지적받은 부분을 수정해서 다시 보고해.",
+        "suggested_message": "넵, 수정해서 다시 드리겠습니다!",
+        "avoid": "변명을 길게 늘어놓기",
+        "follow_up_question": null,
+        "safety_flag": false
+      },
+      "createdAt": "2026-10-24T09:01:08.000Z"
+    }
+  },
+  "error": null
+}
+```
+
+| payload 필드 | 설명 |
+| --- | --- |
+| intent | 상사의 말이나 상황에 담긴 의도 해석 |
+| confidence | `high` / `medium` / `low` |
+| persona_basis | 해석에 사용한 성향/정보 (문자열 배열, 1개 이상) |
+| recommended_action | 지금 하면 좋은 행동 |
+| suggested_message | 주 소통 채널에 맞춰 그대로 보낼 수 있는 문장 |
+| avoid | 피해야 할 행동이나 표현 (문자열) |
+| follow_up_question | 정확도를 높이기 위한 되묻기 질문. 없으면 `null` |
+| safety_flag | 직장 내 괴롭힘 등 안전 이슈가 의심되면 `true` |
+
+실패
+
+| status | code | 설명 |
+| --- | --- | --- |
+| 400 | VALIDATION_ERROR | `text` 가 비어 있거나 1000자 초과 |
+| 404 | SESSION_NOT_FOUND | 내 세션이 아니거나 없는 세션, 잘못된 id 형식 |
+| 404 | SUPERVISOR_NOT_FOUND | 세션에 연결된 상사가 없거나 삭제됨 |
+| 429 | RATE_LIMITED | 분당 10회 초과 |
+| 500 | AI_NOT_CONFIGURED | 서버에 Gemini 키가 설정되지 않음 |
+| 502 | AI_UNAVAILABLE | Gemini 호출 실패 또는 30초 초과 |
+| 502 | AI_RESPONSE_INVALID | AI 응답이 형식에 맞지 않아 1회 재시도했지만 실패 |
+
+`AI_UNAVAILABLE`, `AI_RESPONSE_INVALID` 일 때도 사용자의 메시지는 저장된 상태로 남습니다. 같은 문장을 다시 보내면 사용자 메시지가 중복 저장됩니다.
+
+## GET /api/sessions/:id
+
+`Authorization: Bearer <accessToken>` 헤더가 필요합니다. 내 세션의 정보와 메시지를 시간순으로 돌려줍니다.
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "session": { "id": "9fba...", "supervisorId": "5b1c...", "title": "김팀장 상담", "createdAt": "2026-10-24T09:00:00.000Z" },
+    "messages": [
+      { "id": "3ccd...", "role": "ai", "text": "김팀장이랑 무슨 일 있었어? ...", "payload": null, "createdAt": "..." },
+      { "id": "a1...", "role": "user", "text": "보고서 냈더니 ...", "payload": null, "createdAt": "..." },
+      { "id": "b2...", "role": "ai", "text": "실제로 다시 검토해보라는 뜻이야.\n...", "payload": { "intent": "..." }, "createdAt": "..." }
+    ]
+  },
+  "error": null
+}
+```
+
+실패 (404) — 내 세션이 아니거나 없는 세션, 잘못된 id 형식 (`SESSION_NOT_FOUND`)
+
+실패 (401) — 위 모든 엔드포인트에서 토큰이 없거나 유효하지 않은 경우 (`UNAUTHORIZED`)
+
 ## 인증이 필요한 다른 API 에서 재사용
 
 ```ts
