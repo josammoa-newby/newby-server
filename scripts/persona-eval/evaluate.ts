@@ -1,10 +1,13 @@
 import { CASES } from './cases.js';
 import type { EvalCase } from './cases.js';
 import {
+  checkCodeAbbrev,
+  checkLegal,
   checkLength,
   checkPersonaBasis,
   checkSafety,
   checkSchema,
+  checkTone,
 } from './checks.js';
 import type { CheckName, Status } from './checks.js';
 import { getBoss } from './fixtures.js';
@@ -64,6 +67,15 @@ export function evaluate(
 
     const length = checkLength(a.suggested_message, row.channel, row.scores.reporting?.letter === 'R');
     add('length', result.caseId, result.boss, length.status, length.detail);
+
+    const tone = checkTone(a);
+    add('tone', result.caseId, result.boss, tone.status, tone.detail);
+
+    const legal = checkLegal(a);
+    add('legal', result.caseId, result.boss, legal.status, legal.detail);
+
+    const abbrev = checkCodeAbbrev(a.persona_basis);
+    add('code_abbrev', result.caseId, result.boss, abbrev.status, abbrev.detail);
   }
 
   // 케이스 단위 의미 판단 (안전 케이스는 해석 차이를 보지 않는다)
@@ -77,6 +89,8 @@ export function evaluate(
     if (evalCase.id === 1 && caseResults.some((r) => r.boss === 'IC')) {
       findings.push(judged(verdicts, 'w6:IC', 'w6', evalCase.id, 'IC'));
     }
+    // f) 근거 실재: 안전 케이스를 뺀 모든 케이스에서 상사별로 판정한다.
+    for (const r of caseResults) findings.push(judged(verdicts, `grounding:${r.boss}`, 'grounding', evalCase.id, r.boss));
     if (evalCase.id === 4 || evalCase.id === 9) {
       for (const r of caseResults) findings.push(judged(verdicts, `no_blame:${r.boss}`, 'no_blame', evalCase.id, r.boss));
     }

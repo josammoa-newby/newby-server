@@ -66,7 +66,7 @@ describe('축별 문장', () => {
       ['warmth', -60, '관계와 분위기를 중시한다', '기본적인 친근함'],
       ['speed', 60, '빠른 응답을 기대한다', '급한 건은 빨리'],
       ['speed', -60, '완성도를 본다', '마감만 지키면'],
-      ['stability', 60, '반응 기준이 일정하다', '대체로 일관적이다'],
+      ['stability', 60, '같은 상황에서는 같은 반응을 기대해도 된다', '대체로 일관적이다'],
       ['stability', -60, '기분에 따라 반응이 달라진다', '컨디션을 한 번 살피고'],
     ];
     for (const [axis, strongScore, strong, mild] of cases) {
@@ -74,6 +74,17 @@ describe('축별 문장', () => {
       assert.ok(has(getAxisRules(scores({ [axis]: strongScore })), strong), `${axis} ${strongScore} strong`);
       assert.ok(has(getAxisRules(scores({ [axis]: sign * 30 })), mild), `${axis} ${sign * 30} mild`);
     }
+  });
+
+  it('안정형 문장은 말을 곧이곧대로 믿으라고 하지 않고 다른 축 규칙을 따르게 한다', () => {
+    for (const score of [60, 30]) {
+      assert.ok(!has(getAxisRules(scores({ stability: score })), '그대로 믿어도'));
+    }
+    const strong = getAxisRules(scores({ stability: 60 }))[0];
+    assert.ok(strong.includes('다른 축 규칙을 따른다'));
+    // 돌려말형과 함께여도 서로 모순되는 문장이 같이 나오지 않는다
+    const both = getAxisRules(scores({ directness: -60, stability: 60 }));
+    assert.ok(!both.some((line) => line.includes('그대로 믿어도')));
   });
 
   it('축 순서대로 줄이 만들어진다', () => {

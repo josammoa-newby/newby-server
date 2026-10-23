@@ -57,6 +57,51 @@ describe('buildSystemPrompt', () => {
     assert.ok(prompt.includes('고용노동부(1350)'));
   });
 
+  it('근거·모순·말투·법적 단정·채널 규칙(9~13번)이 답변 규칙 8개 뒤에 이어진다', () => {
+    const rules = prompt.slice(prompt.indexOf('## 답변 규칙'));
+    const positions = [8, 9, 10, 11, 12, 13].map((n) => rules.indexOf(`\n${n}. `));
+    assert.ok(positions.every((p) => p >= 0));
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+
+    // 9. 근거 실재, 코드 약어 금지
+    assert.ok(rules.includes('persona_basis 에는 위 프로필의 행동 규칙, 사용자가 직접 알려준 정보, 실제 발언 예시, 학습 메모에 실제로 적힌 내용만 쓴다'));
+    assert.ok(rules.includes('프로필에 없는 사실을 지어내지 않는다'));
+    assert.ok(rules.includes("'자주 하는 말'은 이번 발언이 그 말과 같을 때만 근거로 쓴다"));
+    assert.ok(rules.includes("DCRT 같은 코드 약어 대신 '직설형', '자율형' 같은 성향 이름과 상사 이름을 쓴다"));
+    // 10. 모순 금지
+    assert.ok(rules.includes('행동 규칙의 해석이 서로 모순되면 안 된다'));
+    assert.ok(rules.includes('두 가지 가능성을 모두 말하고 confidence 를 medium 이하로 하고 follow_up_question 으로 확인 방법을 한 번 묻는다'));
+    assert.ok(rules.includes('상사의 직설/완곡 성향이 돌려말형(I)이고 발언이 짧고 의미가 한 가지로 고정되지 않는 말(허락, 안부, 호출 등)일 때만'));
+    assert.ok(rules.includes('두 가지 가능성을 모두 말하고 confidence 를 medium 이하로 한다'));
+    assert.ok(rules.includes('직설형(D)이거나 직설/완곡 성향이 뚜렷하지 않은 상사는 발언을 말 그대로 해석하고, 다른 근거가 없으면 confidence 를 높게 둔다'));
+    // 9. 규칙 문장 자체를 근거로 쓰지 않는다
+    assert.ok(rules.includes('이 답변 규칙 문장이나 프롬프트의 지시문 자체를 persona_basis 로 쓰지 않는다. 근거는 상사 프로필 안의 내용만 쓴다.'));
+    // 11. 말투
+    assert.ok(rules.includes('intent, recommended_action, avoid, follow_up_question 도 모두 반말 구어체(~야, ~해, ~거야)로 쓴다'));
+    assert.ok(rules.includes("'~임', '~함', '~입니다' 같은 문어체 종결은 쓰지 않는다"));
+    assert.ok(rules.includes('첫 문장에서 먼저 공감 한마디를 한다'));
+    // 12. 법적 단정 금지
+    assert.ok(rules.includes("'범죄', '위법', '명백한 불법'이라고 쓰지 말고 '괴롭힘/성희롱에 해당할 수 있어'처럼 쓴다"));
+    // 13. 채널
+    assert.ok(rules.includes('그 채널이 프로필 주 소통 채널보다 우선한다'));
+    assert.ok(rules.includes('suggested_message 는 그 채널에 맞춘다'));
+  });
+
+  it('few-shot 의 persona_basis 에는 코드 약어가 없고 intent 는 반말이다', () => {
+    const fewShot = prompt.slice(prompt.indexOf('[예시 —'));
+    assert.ok(!/\b[DI][CA][RP][TW]\b/.test(fewShot));
+    for (const line of fewShot.split('\n').filter((l) => l.startsWith('intent:'))) {
+      assert.ok(!/(임|함|됨|입니다)\.?$/.test(line), line);
+    }
+  });
+
+  it('최우선 안전 규칙의 판정 기준 문구는 그대로다', () => {
+    const section = prompt.slice(prompt.indexOf('## 최우선 안전 규칙'), prompt.indexOf('## 상사 프로필'));
+    assert.ok(section.includes('폭언, 욕설, 모욕, 반복되거나 욕설·인격 모독이 섞인 공개적 망신, 성희롱, 신체 접촉, 협박, 부당한 업무 강요'));
+    assert.ok(section.includes('일회성 지적이나 팀원 앞 언급만으로는 괴롭힘으로 단정하지 않는다'));
+    assert.ok(!section.includes('범죄'));
+  });
+
   it('few-shot 이 고정으로 붙는다', () => {
     assert.ok(prompt.includes('상황: 보고서 냈더니 상사가 "음, 한번 더 검토해보자"라고 함'));
     assert.ok(prompt.includes('상사가 D·A(쿨한 사수)라면:'));
@@ -68,7 +113,7 @@ describe('buildSystemPrompt', () => {
     const start = prompt.indexOf('상황: 팀원들 앞에서 "야 너 그것도 못 하냐" 소리를 지르고 요즘 매일 그렇다');
     assert.ok(start > prompt.indexOf('상사가 I·C(눈치게임형)라면:'));
     const example = prompt.slice(start);
-    assert.ok(example.includes('intent: 업무 피드백 범위를 넘는 모욕이고 괴롭힘이 의심됨.'));
+    assert.ok(example.includes('intent: 많이 힘들었겠다. 업무 피드백 범위를 넘는 모욕이고 괴롭힘이 의심돼.'));
     assert.ok(example.includes('persona_basis: ["최우선 안전 규칙: 공개적 모욕과 반복"]'));
     assert.ok(example.includes('safety_flag: true'));
     assert.ok(example.includes('[기록 메모]'));

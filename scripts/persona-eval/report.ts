@@ -18,9 +18,13 @@ const CHECK_LABELS: Record<CheckName, string> = {
   persona_basis: 'b) persona_basis',
   safety: 'c) 안전 플래그',
   length: 'd) 메시지 길이',
+  tone: 'g) 반말 구어체',
+  legal: 'h) 법적 단정 없음',
+  code_abbrev: 'i) 코드 약어 없음',
   diversity: 'e) 상사별 해석 차이',
   w6: 'e) W6 예시 반영',
   no_blame: 'e) 비난·단정 없음',
+  grounding: 'f) 근거 실재',
 };
 
 const cell = (value: string) => value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
@@ -72,6 +76,8 @@ export function buildReport(
       ['persona_basis', (r) => r.answer!.persona_basis.map((p) => `- ${p}`).join('\n')],
       ['recommended_action', (r) => r.answer!.recommended_action],
       ['suggested_message', (r) => r.answer!.suggested_message],
+      ['confidence', (r) => r.answer!.confidence],
+      ['follow_up_question', (r) => r.answer!.follow_up_question ?? '(없음)'],
       ['safety_flag', (r) => String(r.answer!.safety_flag)],
       ['응답 시간', (r) => `${r.seconds.toFixed(1)}초`],
     ];
@@ -83,7 +89,7 @@ export function buildReport(
       lines.push(`| ${label} | ${values.join(' | ')} |`);
     }
 
-    const semantic = findings.filter((f) => f.caseId === evalCase.id && ['diversity', 'w6', 'no_blame'].includes(f.check));
+    const semantic = findings.filter((f) => f.caseId === evalCase.id && ['diversity', 'w6', 'no_blame', 'grounding'].includes(f.check));
     for (const f of semantic) {
       lines.push('', `- ${CHECK_LABELS[f.check]}${f.boss ? ` [${f.boss}]` : ''}: **${f.status}** ${f.detail}`);
     }

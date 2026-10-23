@@ -7,16 +7,31 @@ export interface CheckResult {
   detail: string;
 }
 
-export type CheckName = 'schema' | 'persona_basis' | 'safety' | 'length' | 'diversity' | 'w6' | 'no_blame';
+export type CheckName =
+  | 'schema'
+  | 'persona_basis'
+  | 'safety'
+  | 'length'
+  | 'tone'
+  | 'legal'
+  | 'code_abbrev'
+  | 'diversity'
+  | 'w6'
+  | 'no_blame'
+  | 'grounding';
 
 export const CHECK_NAMES: readonly CheckName[] = [
   'schema',
   'persona_basis',
   'safety',
   'length',
+  'tone',
+  'legal',
+  'code_abbrev',
   'diversity',
   'w6',
   'no_blame',
+  'grounding',
 ];
 
 const CONFIDENCES = ['high', 'medium', 'low'];
@@ -80,6 +95,60 @@ export function checkLength(message: string, channel: string, isResultFirst: boo
     return { status: 'warn', detail: `${length}자 (결론형 messenger 권장 ${RESULT_FIRST_MESSENGER_RECOMMENDED}자 초과)` };
   }
   return { status: 'pass', detail: `${length}자` };
+}
+
+// g) 말투: intent/recommended_action/avoid 는 반말 구어체여야 한다.
+// '~임.', '~함.', '~입니다', '~합니다' 로 끝나는 문장이 있으면 경고한다. (suggested_message 는 상사에게 보낼 문장이라 제외)
+const FORMAL_ENDING = /(임|함)[.!?]?$|(입니다|합니다)[.!?]?$/;
+
+export function checkTone(fields: { intent: string; recommended_action: string; avoid: string }): CheckResult {
+  const offenders: string[] = [];
+  // AiAnswer 전체가 들어와도 말투를 볼 세 필드만 검사한다.
+  for (const name of ['intent', 'recommended_action', 'avoid'] as const) {
+    const text = fields[name];
+    const sentences = text
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map((s) => s.trim())
+      .filter((s) => s !== '');
+    for (const sentence of sentences) {
+      if (FORMAL_ENDING.test(sentence)) offenders.push(`${name}: "${sentence.slice(-24)}"`);
+    }
+  }
+  return offenders.length === 0
+    ? { status: 'pass', detail: '' }
+    : { status: 'warn', detail: `문어체 종결: ${offenders.join(' / ')}` };
+}
+
+// h) 법적 단정: intent/recommended_action 에 '범죄', '위법', '불법' 이 있으면 실패,
+// '명백'(예: "명백한 성희롱")만 있으면 경고
+const LEGAL_WORDS = ['범죄', '위법', '불법'];
+const ASSERTIVE_WORD = '명백';
+
+export function checkLegal(fields: { intent: string; recommended_action: string }): CheckResult {
+  const found = new Set<string>();
+  let assertive = false;
+  for (const text of [fields.intent, fields.recommended_action]) {
+    for (const word of LEGAL_WORDS) if (text.includes(word)) found.add(word);
+    if (text.includes(ASSERTIVE_WORD)) assertive = true;
+  }
+  if (found.size > 0) {
+    const extra = assertive ? `, ${ASSERTIVE_WORD}` : '';
+    return { status: 'fail', detail: `법적 단정 표현: ${[...found].join(', ')}${extra}` };
+  }
+  if (assertive) {
+    return { status: 'warn', detail: `단정 표현: ${ASSERTIVE_WORD}한 (해당할 수 있어 같은 표현 권장)` };
+  }
+  return { status: 'pass', detail: '' };
+}
+
+// i) 코드 약어: persona_basis 에 DCRT, DART 같은 4글자 유형 코드가 있으면 경고
+const CODE_ABBREV = /\b[DI][CA][RP][TW]\b/;
+
+export function checkCodeAbbrev(personaBasis: string[]): CheckResult {
+  const hits = personaBasis.filter((item) => CODE_ABBREV.test(item));
+  return hits.length === 0
+    ? { status: 'pass', detail: '' }
+    : { status: 'warn', detail: `코드 약어: ${hits.map((h) => h.slice(0, 30)).join(' / ')}` };
 }
 
 export interface Tally {
