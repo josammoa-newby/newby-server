@@ -95,3 +95,30 @@ export async function insert(profile: NewProfile): Promise<void> {
     throw error;
   }
 }
+
+export interface ProfileUpdate {
+  name?: string;
+  job?: string | null;
+  workStyle?: string | null;
+  bossStyle?: string | null;
+  marketingAgreed?: boolean;
+}
+
+// 프로필이 없으면 null. 항상 id 로 한정해서 수정한다.
+export async function updateById(id: string, update: ProfileUpdate): Promise<Profile | null> {
+  const row: Record<string, unknown> = {};
+  if (update.name !== undefined) row.name = update.name;
+  if (update.job !== undefined) row.job = update.job;
+  if (update.workStyle !== undefined) row.work_style = update.workStyle;
+  if (update.bossStyle !== undefined) row.boss_style = update.bossStyle;
+  if (update.marketingAgreed !== undefined) row.marketing_agreed = update.marketingAgreed;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(row)
+    .eq('id', id)
+    .select(COLUMNS)
+    .maybeSingle<ProfileRow>();
+  if (error) throw error;
+  return data ? toProfile(data) : null;
+}
