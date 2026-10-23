@@ -218,6 +218,65 @@ Invoke-RestMethod "http://localhost:3000/api/auth/me" `
 }
 ```
 
+## PATCH /api/me
+
+내 프로필을 부분 수정합니다. `Authorization: Bearer <accessToken>` 헤더가 필요하고, 항상 토큰의 사용자 본인 프로필만 수정됩니다.
+
+보낸 필드만 수정되며 최소 1개는 있어야 합니다. 아래 목록에 없는 필드(`id`, `username`, `email`, `password` 등)가 하나라도 있으면 400 입니다.
+
+| 필드 | 규칙 |
+| --- | --- |
+| name | 1~50자 (공백은 앞뒤 제거) |
+| job / workStyle / bossStyle | 문자열 100자 이하. `null` 또는 빈 문자열이면 값을 비웁니다 |
+| marketingAgreed | boolean |
+
+```powershell
+$body = @{ name = "김뉴비"; job = "developer" } | ConvertTo-Json
+Invoke-RestMethod -Method Patch -Uri "http://localhost:3000/api/me" `
+  -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType "application/json" -Body $body
+```
+
+성공 (200) — login 의 `user` 와 같은 모양입니다. 수정된 전체 프로필은 `GET /api/auth/me` 로 확인하세요.
+
+```json
+{
+  "success": true,
+  "data": { "id": "0b6f...", "username": "newby_01", "name": "김뉴비" },
+  "error": null
+}
+```
+
+실패 (400) — 빈 body, 수정할 수 없는 필드, 값 검증 실패
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "VALIDATION_ERROR", "message": "수정할 수 없는 항목이에요: username" }
+}
+```
+
+실패 (401)
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "UNAUTHORIZED", "message": "로그인이 필요해요" }
+}
+```
+
+실패 (404) — 토큰은 유효하지만 프로필이 없는 경우
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "PROFILE_NOT_FOUND", "message": "프로필을 찾을 수 없어요" }
+}
+```
+
 ## 인증이 필요한 다른 API 에서 재사용
 
 ```ts

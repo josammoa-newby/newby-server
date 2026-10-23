@@ -120,3 +120,53 @@ export function validateRefresh(body: unknown): RefreshInput {
   }
   return { refreshToken: b.refreshToken.trim() };
 }
+
+// PATCH /api/me 로 수정할 수 있는 프로필 필드. username, id, email, 비밀번호 같은 인증/식별 필드는 포함하지 않는다.
+export interface ProfileUpdateInput {
+  name?: string;
+  job?: string | null;
+  workStyle?: string | null;
+  bossStyle?: string | null;
+  marketingAgreed?: boolean;
+}
+
+export const PROFILE_UPDATABLE_FIELDS = ['name', 'job', 'workStyle', 'bossStyle', 'marketingAgreed'] as const;
+
+export function validateProfileUpdate(body: unknown): ProfileUpdateInput {
+  const b = asObject(body);
+
+  const rejected = Object.keys(b).filter(
+    (key) => !(PROFILE_UPDATABLE_FIELDS as readonly string[]).includes(key),
+  );
+  if (rejected.length > 0) {
+    invalid(`수정할 수 없는 항목이에요: ${rejected.join(', ')}`);
+  }
+  if (Object.keys(b).length === 0) {
+    invalid('수정할 항목을 입력해주세요');
+  }
+
+  const update: ProfileUpdateInput = {};
+
+  if ('name' in b) {
+    if (typeof b.name !== 'string' || b.name.trim() === '') {
+      invalid('이름을 입력해주세요');
+    }
+    const name = b.name.trim();
+    if (name.length > MAX_NAME) invalid(`이름은 ${MAX_NAME}자 이하로 입력해주세요`);
+    update.name = name;
+  }
+
+  // 선택 항목은 null(또는 빈 문자열)로 보내면 값을 비운다.
+  if ('job' in b) update.job = optionalAnswer(b.job, '직무');
+  if ('workStyle' in b) update.workStyle = optionalAnswer(b.workStyle, '업무 스타일');
+  if ('bossStyle' in b) update.bossStyle = optionalAnswer(b.bossStyle, '상사 유형');
+
+  if ('marketingAgreed' in b) {
+    if (typeof b.marketingAgreed !== 'boolean') {
+      invalid('마케팅 수신 동의 값이 올바르지 않아요');
+    }
+    update.marketingAgreed = b.marketingAgreed;
+  }
+
+  return update;
+}
