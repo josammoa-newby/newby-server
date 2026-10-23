@@ -21,6 +21,9 @@
 
 - 공유 파일(package.json, package-lock.json, src/routes/index.ts, docs/api.md, supabase/, .github/, CLAUDE.md)은 성찬만 수정한다. 다른 사람이 필요하면 수정하지 말고 요청한다.
 - 패키지 설치가 필요하면 설치하지 말고 먼저 알려준다.
-- 항상 최신 main에서 브랜치를 만들고, PR 전에 git merge main 한다.
+- 브랜치는 작업 시작 때 최신 main에서 딱 한 번 만든다.
+- 브랜치를 만든 뒤에는 절대 main으로 checkout 하지 않는다. 작업과 커밋은 항상 작업 브랜치에서 한다.
+- 커밋 전에 git branch --show-current 로 현재 브랜치를 확인한다. 작업 브랜치가 아니면 git checkout <작업 브랜치> 로 돌아온 뒤 커밋한다.
+- main 최신 내용이 필요하면 작업 브랜치에서 git fetch origin 후 git merge origin/main 을 쓴다. (main으로 이동하지 않는다.)
 - 새 기능은 새 파일에 만든다. 기존 파일은 꼭 필요한 부분만 최소한으로 수정한다.
 - 한 브랜치 = 한 기능. git add는 파일을 지정해서 한다. git add . 금지.
