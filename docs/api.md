@@ -119,6 +119,66 @@ $token = $res.data.accessToken
 }
 ```
 
+## POST /api/auth/refresh
+
+만료된 accessToken 을 새로 발급받습니다. Supabase 는 refresh token 을 회전시키므로, 응답의 새 `refreshToken` 으로 반드시 교체해서 저장하세요.
+
+요청 body: `{ "refreshToken": "..." }`
+
+```powershell
+# login 으로 받은 $res.data.refreshToken 사용
+$body = @{ refreshToken = $res.data.refreshToken } | ConvertTo-Json
+$res = Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/auth/refresh" `
+  -ContentType "application/json" -Body $body
+$token = $res.data.accessToken
+```
+
+성공 (200) — login 응답과 같은 모양입니다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJ...",
+    "refreshToken": "...",
+    "user": { "id": "0b6f...", "username": "newby_01", "name": "홍길동" }
+  },
+  "error": null
+}
+```
+
+실패 (400) — body 가 없거나 `refreshToken` 이 비어 있거나 문자열이 아닌 경우
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "VALIDATION_ERROR", "message": "refreshToken을 입력해주세요" }
+}
+```
+
+실패 (401) — 만료되었거나 유효하지 않은 토큰입니다. 클라이언트는 로그인 화면으로 보내세요.
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "UNAUTHORIZED", "message": "세션이 만료됐어요. 다시 로그인해주세요" }
+}
+```
+
+실패 (404) — 토큰은 유효하지만 프로필이 없는 경우 (`PROFILE_NOT_FOUND`)
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": { "code": "PROFILE_NOT_FOUND", "message": "프로필을 찾을 수 없어요" }
+}
+```
+
+참고: 회전 직후 약 10초간은 이전 refreshToken 도 허용될 수 있습니다 (Supabase 설정).
+
 ## GET /api/auth/me
 
 `Authorization: Bearer <accessToken>` 헤더가 필요합니다.
