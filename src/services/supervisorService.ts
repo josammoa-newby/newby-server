@@ -1,5 +1,6 @@
 import { AppError } from '../lib/AppError.js';
 import { scorePersona } from '../persona/scoring.js';
+import * as feedbackRepository from '../repositories/feedbackRepository.js';
 import * as supervisorRepository from '../repositories/supervisorRepository.js';
 import type { SupervisorColumns } from '../repositories/supervisorRepository.js';
 import { toDetail, toSummary } from './supervisorMapper.js';
@@ -41,7 +42,7 @@ export async function get(userId: string, id: string): Promise<SupervisorDetail>
   if (!isUuid(id)) throw notFound();
   const row = await supervisorRepository.findOwned(userId, id);
   if (!row) throw notFound();
-  return toDetail(row);
+  return toDetail(row, await feedbackRepository.listRecentApplied(row.id));
 }
 
 export async function update(userId: string, id: string, patch: SupervisorPatchInput): Promise<SupervisorDetail> {
@@ -73,5 +74,5 @@ export async function update(userId: string, id: string, patch: SupervisorPatchI
 
   const row = await supervisorRepository.updateOwned(userId, id, columns);
   if (!row) throw notFound();
-  return toDetail(row);
+  return toDetail(row, await feedbackRepository.listRecentApplied(row.id));
 }

@@ -386,6 +386,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/supervisors" `
     "valuesText": null,
     "examples": [{ "said": "한번 검토해보자", "meant": "고치라는 뜻" }],
     "learnedNotes": [],
+    "recentAdjustments": [{ "axis": "directness", "dir": -1, "createdAt": "2026-10-24T10:00:00.000Z" }],
     "isDefault": true,
     "createdAt": "2026-10-24T09:00:00.000Z",
     "updatedAt": "2026-10-24T09:00:00.000Z"
@@ -396,6 +397,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/supervisors" `
 
 - `scores` 는 보정값(`score_adjust`)이 있으면 적용한 값입니다. 측정되지 않은 축(빠른 모드의 `speed`, `stability`)은 `null` 입니다.
 - `needsCheck` 는 응답이 엇갈려(`consistency < 0.5`) 확인이 필요한 축 이름 배열입니다.
+- `recentAdjustments` 는 피드백(`POST /api/messages/:id/feedback`)으로 점수가 보정된(`applied`) 피드백 중 최근 3개의 `{ axis, dir, createdAt }` 입니다. `dir` 은 점수가 이동한 방향(`1` 또는 `-1`)이고, 없으면 빈 배열입니다. 결과 카드에 "최근 피드백으로 조금 더 돌려말형으로 바뀌었어요" 같은 안내를 보여줄 때 쓰세요.
 - `topRules` 는 뚜렷한 축(`strong`)의 행동 규칙을 우선 최대 3개, 부족하면 약한 축(`mild`)으로 채웁니다. 조합 규칙은 제외됩니다.
 
 실패 (404) — 없는 id, 남의 상사, 잘못된 id 형식은 모두 같은 응답입니다.
@@ -599,6 +601,66 @@ $sessionId = $res.data.session.id
 실패 (404) — 내 세션이 아니거나 없는 세션, 잘못된 id 형식 (`SESSION_NOT_FOUND`)
 
 실패 (401) — 위 모든 엔드포인트에서 토큰이 없거나 유효하지 않은 경우 (`UNAUTHORIZED`)
+
+## POST /api/messages/:id/feedback
+
+AI 답변 카드의 👍/👎 피드백을 남깁니다. `:id` 는 AI 답변 메시지(`aiMessage.id`)입니다. `Authorization: Bearer <accessToken>` 헤더가 필요하고, 사용자당 분당 10회로 제한됩니다.
+
+| 필드 | 필수 | 규칙 |
+| --- | --- | --- |
+| helpful | O | boolean. 👍 `true`, 👎 `false` |
+| actualReaction | | 실제 상사 반응. 앞뒤 공백을 제거한 뒤 500자 이하. `helpful: true` 이면 무시됩니다 |
+
+```powershell
+$body = @{ helpful = $false; actualReaction = "그냥 말 그대로 한 번 같이 보자는 뜻이었어" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/messages/$messageId/feedback" `
+  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body $body
+```
+
+처리
+
+- 메시지당 피드백은 1번만 남길 수 있습니다.
+- 👍: 저장만 합니다.
+- 👎 + `actualReaction`: AI 가 이 상사에 대해 새로 알게 된 사실(`newNote`)과 AI 해석이 틀린 성향 축(`axisHint`)을 뽑습니다.
+  - `newNote` 는 상사의 학습 메모(`learnedNotes`)에 추가됩니다. 최대 10개이고, 넘으면 가장 오래된 5개를 1~2문장으로 합칩니다. 합치기가 실패하면 가장 오래된 것부터 버립니다.
+  - 같은 축, 같은 방향(`dir`)의 `axisHint` 가 2번 쌓이면 그 축의 점수가 `dir × 10` 만큼 보정되고(최종 점수는 -100~100 범위), 그 2개 피드백은 반영됨(`applied`)으로 바뀝니다. 이때 응답의 `scoreAdjusted` 에 값이 들어옵니다.
+- AI 호출이 실패하거나 응답이 올바르지 않아도 피드백은 저장되고 200 으로 응답합니다. 이때 `newNote`, `axisHint`, `scoreAdjusted` 는 `null` 입니다.
+- 빠른 모드로 만든 상사의 `speed`, `stability` 처럼 측정되지 않은 축은 보정되지 않습니다.
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "7d3e...",
+    "helpful": false,
+    "newNote": "이 상사는 '검토해보자'를 정말 같이 보자는 뜻으로 쓴다",
+    "axisHint": { "axis": "directness", "dir": 1 },
+    "scoreAdjusted": null
+  },
+  "error": null
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| id | 피드백 id |
+| helpful | 보낸 값 |
+| newNote | 학습 메모에 추가된 문장. 없으면 `null` |
+| axisHint | AI 가 알려준 `{ axis, dir }`. `axis` 는 `directness`/`control`/`reporting`/`warmth`/`speed`/`stability`, `dir` 은 `1` 또는 `-1`(점수가 이동해야 하는 방향). 없으면 `null` |
+| scoreAdjusted | 이번 피드백으로 점수가 보정되었으면 `{ axis, dir }`, 아니면 `null` |
+
+실패
+
+| status | code | 설명 |
+| --- | --- | --- |
+| 400 | VALIDATION_ERROR | `helpful` 이 boolean 이 아님, `actualReaction` 이 문자열이 아니거나 500자 초과 |
+| 401 | UNAUTHORIZED | 토큰이 없거나 유효하지 않음 |
+| 404 | MESSAGE_NOT_FOUND | 내 세션의 AI 답변 메시지가 아님 (없는 id, 남의 메시지, 사용자 메시지, 첫 인사 메시지, 잘못된 id 형식) |
+| 404 | SUPERVISOR_NOT_FOUND | 세션에 연결된 상사가 없거나 삭제됨 |
+| 409 | FEEDBACK_ALREADY_EXISTS | 이 메시지에는 이미 피드백이 있음 |
+| 429 | RATE_LIMITED | 분당 10회 초과 |
 
 ## 인증이 필요한 다른 API 에서 재사용
 
