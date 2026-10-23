@@ -142,8 +142,17 @@ describe('checkLegal (h)', () => {
     assert.match(legal('범죄야.', '위법이야.').detail, /범죄.*위법|위법.*범죄/);
   });
 
+  it("'명백' 만 있으면 실패가 아니라 경고이고, '범죄' 등과 같이 있으면 실패", () => {
+    assert.equal(legal('명백한 성희롱이야.').status, 'warn');
+    assert.equal(legal('괜찮아.', '명백히 부적절한 행동이니 기록해둬.').status, 'warn');
+    assert.match(legal('명백한 성희롱이야.').detail, /명백/);
+    assert.equal(legal('명백한 범죄야.').status, 'fail');
+    assert.equal(legal('명백한 위법이야.').status, 'fail');
+    assert.equal(legal('성희롱에 해당할 수 있어.').status, 'pass');
+  });
+
   it('다른 필드(avoid, suggested_message)는 검사하지 않는다', () => {
-    assert.equal(checkLegal({ intent: '괜찮아.', recommended_action: '기록해둬.', ...({ avoid: '불법' } as object) }).status, 'pass');
+    assert.equal(checkLegal({ intent: '괜찮아.', recommended_action: '기록해둬.', ...({ avoid: '불법 명백' } as object) }).status, 'pass');
   });
 });
 

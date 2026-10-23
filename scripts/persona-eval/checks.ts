@@ -119,17 +119,26 @@ export function checkTone(fields: { intent: string; recommended_action: string; 
     : { status: 'warn', detail: `문어체 종결: ${offenders.join(' / ')}` };
 }
 
-// h) 법적 단정: intent/recommended_action 에 '범죄', '위법', '불법' 이 있으면 실패
+// h) 법적 단정: intent/recommended_action 에 '범죄', '위법', '불법' 이 있으면 실패,
+// '명백'(예: "명백한 성희롱")만 있으면 경고
 const LEGAL_WORDS = ['범죄', '위법', '불법'];
+const ASSERTIVE_WORD = '명백';
 
 export function checkLegal(fields: { intent: string; recommended_action: string }): CheckResult {
   const found = new Set<string>();
+  let assertive = false;
   for (const text of [fields.intent, fields.recommended_action]) {
     for (const word of LEGAL_WORDS) if (text.includes(word)) found.add(word);
+    if (text.includes(ASSERTIVE_WORD)) assertive = true;
   }
-  return found.size === 0
-    ? { status: 'pass', detail: '' }
-    : { status: 'fail', detail: `법적 단정 표현: ${[...found].join(', ')}` };
+  if (found.size > 0) {
+    const extra = assertive ? `, ${ASSERTIVE_WORD}` : '';
+    return { status: 'fail', detail: `법적 단정 표현: ${[...found].join(', ')}${extra}` };
+  }
+  if (assertive) {
+    return { status: 'warn', detail: `단정 표현: ${ASSERTIVE_WORD}한 (해당할 수 있어 같은 표현 권장)` };
+  }
+  return { status: 'pass', detail: '' };
 }
 
 // i) 코드 약어: persona_basis 에 DCRT, DART 같은 4글자 유형 코드가 있으면 경고
