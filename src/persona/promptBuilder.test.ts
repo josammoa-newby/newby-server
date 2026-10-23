@@ -71,7 +71,11 @@ describe('buildSystemPrompt', () => {
     // 10. 모순 금지
     assert.ok(rules.includes('행동 규칙의 해석이 서로 모순되면 안 된다'));
     assert.ok(rules.includes('두 가지 가능성을 모두 말하고 confidence 를 medium 이하로 하고 follow_up_question 으로 확인 방법을 한 번 묻는다'));
-    assert.ok(rules.includes('발언이 짧고 의미가 한 가지로 고정되지 않는 말(허락, 안부, 호출 등)은 돌려말형 상사에게서 진짜 배려일 수도 있고 눈치를 보는 신호일 수도 있으니, 두 가능성을 모두 말한다'));
+    assert.ok(rules.includes('상사의 직설/완곡 성향이 돌려말형(I)이고 발언이 짧고 의미가 한 가지로 고정되지 않는 말(허락, 안부, 호출 등)일 때만'));
+    assert.ok(rules.includes('두 가지 가능성을 모두 말하고 confidence 를 medium 이하로 한다'));
+    assert.ok(rules.includes('직설형(D)이거나 직설/완곡 성향이 뚜렷하지 않은 상사는 발언을 말 그대로 해석하고, 다른 근거가 없으면 confidence 를 높게 둔다'));
+    // 9. 규칙 문장 자체를 근거로 쓰지 않는다
+    assert.ok(rules.includes('이 답변 규칙 문장이나 프롬프트의 지시문 자체를 persona_basis 로 쓰지 않는다. 근거는 상사 프로필 안의 내용만 쓴다.'));
     // 11. 말투
     assert.ok(rules.includes('intent, recommended_action, avoid, follow_up_question 도 모두 반말 구어체(~야, ~해, ~거야)로 쓴다'));
     assert.ok(rules.includes("'~임', '~함', '~입니다' 같은 문어체 종결은 쓰지 않는다"));
