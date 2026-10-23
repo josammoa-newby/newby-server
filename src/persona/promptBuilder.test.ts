@@ -61,7 +61,44 @@ describe('buildSystemPrompt', () => {
     assert.ok(prompt.includes('상황: 보고서 냈더니 상사가 "음, 한번 더 검토해보자"라고 함'));
     assert.ok(prompt.includes('상사가 D·A(쿨한 사수)라면:'));
     assert.ok(prompt.includes('상사가 I·C(눈치게임형)라면:'));
-    assert.ok(prompt.trimEnd().endsWith('오늘 중으로 수정해서 다시 드리겠습니다."'));
+    assert.ok(prompt.includes('오늘 중으로 수정해서 다시 드리겠습니다.'));
+  });
+
+  it('괴롭힘 few-shot 이 마지막에 붙는다', () => {
+    const start = prompt.indexOf('상황: 팀원들 앞에서 "야 너 그것도 못 하냐" 소리를 지르고 요즘 매일 그렇다');
+    assert.ok(start > prompt.indexOf('상사가 I·C(눈치게임형)라면:'));
+    const example = prompt.slice(start);
+    assert.ok(example.includes('intent: 업무 피드백 범위를 넘는 모욕이고 괴롭힘이 의심됨.'));
+    assert.ok(example.includes('persona_basis: ["최우선 안전 규칙: 공개적 모욕과 반복"]'));
+    assert.ok(example.includes('safety_flag: true'));
+    assert.ok(example.includes('[기록 메모]'));
+    assert.ok(example.includes('1350'));
+    assert.ok(prompt.trimEnd().endsWith('safety_flag: true'));
+  });
+
+  it('최우선 안전 규칙이 역할 설명 다음, 상사 프로필보다 앞에 있다', () => {
+    const role = prompt.indexOf('너는 사회초년생의 직장 코치 "뉴비"다.');
+    const safety = prompt.indexOf('## 최우선 안전 규칙');
+    const profile = prompt.indexOf('## 상사 프로필');
+    const rules = prompt.indexOf('### 행동 규칙');
+    assert.ok(role >= 0 && role < safety && safety < profile && profile < rules);
+    const section = prompt.slice(safety, profile);
+    for (const phrase of [
+      '폭언, 욕설, 모욕, 공개적 망신, 성희롱, 부당한 업무 강요',
+      '상사 프로필·행동 규칙·답변 규칙보다 이 규칙이 항상 우선한다',
+      'safety_flag를 true로 하고',
+      '상사의 스타일이라고 해석하거나 참으라고 조언하지 않는다',
+      '욕설과 인격 모욕은 업무 피드백이 아니다',
+      '기록(일시, 장소, 발언, 목격자) 남기기',
+      '고용노동부(1350)',
+    ]) {
+      assert.ok(section.includes(phrase), phrase);
+    }
+  });
+
+  it('답변 규칙 1번 끝에 안전 규칙 우선 문구가 있고 7번은 유지된다', () => {
+    assert.ok(prompt.includes('1. 반드시 위 프로필을 근거로 해석한다. 누구에게나 할 수 있는 일반론은 금지. 단, 최우선 안전 규칙이 항상 먼저다.'));
+    assert.ok(prompt.includes('7. 폭언, 모욕, 성희롱, 부당한 업무 강요 등 직장 내 괴롭힘이 의심되면'));
   });
 
   it('빈 값은 "없음"으로 표기한다', () => {
