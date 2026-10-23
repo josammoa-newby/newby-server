@@ -95,3 +95,14 @@ export async function deleteOwned(userId: string, id: string): Promise<boolean> 
   if (error) throw error;
   return (data?.length ?? 0) > 0;
 }
+
+// 그 날짜에 쓴 내 일기 수 (하루 첫 일기에만 경험치를 주려고 쓴다)
+export async function countByDate(userId: string, date: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('diaries')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('date', date);
+  if (error) throw error;
+  return count ?? 0;
+}
