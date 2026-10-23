@@ -7,9 +7,9 @@ import type { PersonaScores } from '../persona/types.js';
 import type { SupervisorRow } from '../services/supervisorMapper.js';
 import type { GeminiClient, GeminiContent } from './gemini.js';
 
-export const DEFAULT_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
-// 기본은 gemini-3.8-flash. (gemini-2.5-* 는 신규 프로젝트에서 막혀 있다.) GEMINI_MODEL 로 바꿀 수 있다.
+// 기본은 gemini-3.5-flash-lite. (gemini-2.5-* 는 신규 프로젝트에서 막혀 있고, gemini-3.8-flash 는 현재 키에서 응답하지 않는다.) GEMINI_MODEL 로 바꿀 수 있다.
 export function getModel(): string {
   return process.env.GEMINI_MODEL || DEFAULT_MODEL;
 }

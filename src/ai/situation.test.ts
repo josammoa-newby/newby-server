@@ -195,7 +195,7 @@ describe('askSituation', () => {
     assert.equal(calls.length, 1);
     const call = calls[0];
     assert.equal(call.model, getModel());
-    assert.equal(DEFAULT_MODEL, 'gemini-3.8-flash');
+    assert.equal(DEFAULT_MODEL, 'gemini-3.5-flash-lite');
     assert.equal(call.thinkingLevel, 'LOW');
     assert.equal(call.temperature, TEMPERATURE);
     assert.equal(call.temperature, 0.4);
@@ -266,11 +266,11 @@ describe('askSituation', () => {
 });
 
 describe('getModel', () => {
-  it('기본은 gemini-3.8-flash 이고 GEMINI_MODEL 로 바꿀 수 있다', () => {
+  it('기본은 gemini-3.5-flash-lite 이고 GEMINI_MODEL 로 바꿀 수 있다', () => {
     const saved = process.env.GEMINI_MODEL;
     try {
       delete process.env.GEMINI_MODEL;
-      assert.equal(getModel(), 'gemini-3.8-flash');
+      assert.equal(getModel(), 'gemini-3.5-flash-lite');
       process.env.GEMINI_MODEL = 'some-other-model';
       assert.equal(getModel(), 'some-other-model');
     } finally {
