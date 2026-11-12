@@ -74,4 +74,4 @@ src/
   middlewares/    에러 처리, 404
 ```
 
-작업 규칙은 [CLAUDE.md](./CLAUDE.md) 를 따릅니다.
+작업 규칙은 [CLAUDE.md](./CLAUDE.md) 를 따릅니다. AI 품질 평가 기준선은 [docs/ai-eval-baseline.md](./docs/ai-eval-baseline.md) 에 있습니다.
