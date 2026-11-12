@@ -1,8 +1,7 @@
 import { AppError } from '../lib/AppError.js';
 import * as missionRepository from '../repositories/missionRepository.js';
 import type { MissionRow, NewMission } from '../repositories/missionRepository.js';
-import { DEFAULT_XP, todayKst } from './missionValidation.js';
-import type { MissionCreateInput } from './missionValidation.js';
+import type { MissionCreateInput, MissionDifficulty, MissionSource } from './missionValidation.js';
 import * as statsService from './statsService.js';
 import type { AwardResult } from './statsService.js';
 
@@ -12,6 +11,9 @@ export interface Mission {
   title: string;
   done: boolean;
   xp: number;
+  source: MissionSource;
+  reason: string | null;
+  difficulty: MissionDifficulty | null;
   createdAt: string;
 }
 
@@ -20,6 +22,8 @@ export interface MissionDay {
   missions: Mission[];
   doneCount: number;
   total: number;
+  // 그 날의 자동 생성 미션(ai/default)이 이미 있는지. false 면 POST /api/missions/generate 를 부른다.
+  generated: boolean;
 }
 
 export interface MissionDoneResult {
@@ -30,20 +34,29 @@ export interface MissionDoneResult {
   reward: AwardResult | null;
 }
 
-// 오늘 미션이 하나도 없을 때 넣는 기본 미션. 일기 AI 분석이 붙으면 그 결과로 미션이 추가된다.
-export const DEFAULT_MISSIONS: readonly string[] = [
-  '출근 후 오늘 할 일 3가지 적어보기',
-  '모르는 것 하나 선배에게 질문하기',
-  '퇴근 전 오늘 한 일 짧게 정리하기',
-];
-
-function toMission(row: MissionRow): Mission {
-  return { id: row.id, date: row.date, title: row.title, done: row.done, xp: row.xp, createdAt: row.created_at };
+export function toMission(row: MissionRow): Mission {
+  return {
+    id: row.id,
+    date: row.date,
+    title: row.title,
+    done: row.done,
+    xp: row.xp,
+    source: row.source,
+    reason: row.reason,
+    difficulty: row.difficulty,
+    createdAt: row.created_at,
+  };
 }
 
-function toDay(date: string, rows: MissionRow[]): MissionDay {
+export function toDay(date: string, rows: MissionRow[]): MissionDay {
   const missions = rows.map(toMission);
-  return { date, missions, doneCount: missions.filter((m) => m.done).length, total: missions.length };
+  return {
+    date,
+    missions,
+    doneCount: missions.filter((m) => m.done).length,
+    total: missions.length,
+    generated: rows.some((r) => r.slot !== null),
+  };
 }
 
 function notFound(): never {
@@ -51,15 +64,8 @@ function notFound(): never {
 }
 
 export async function listForDate(userId: string, date: string): Promise<MissionDay> {
-  let rows = await missionRepository.listByDate(userId, date);
-  // 오늘(KST) 미션이 없으면 기본 미션을 만들어 준다. 지난 날짜는 만들지 않는다.
-  if (rows.length === 0 && date === todayKst()) {
-    rows = await missionRepository.insertMany(
-      userId,
-      DEFAULT_MISSIONS.map((title) => ({ date, title, xp: DEFAULT_XP })),
-    );
-  }
-  return toDay(date, rows);
+  // 조회만 한다. 미션 생성은 POST /api/missions/generate (missionGenerationService) 가 맡는다.
+  return toDay(date, await missionRepository.listByDate(userId, date));
 }
 
 // 여러 개를 한 번에 추가한다. (일기 AI 분석에서 미션을 만들 때 재사용)

@@ -4,6 +4,14 @@ export const MAX_TITLE = 100;
 export const DEFAULT_XP = 10;
 export const MAX_XP = 100;
 
+export const MISSION_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+export type MissionDifficulty = (typeof MISSION_DIFFICULTIES)[number];
+export const MISSION_SOURCES = ['ai', 'default', 'manual'] as const;
+export type MissionSource = (typeof MISSION_SOURCES)[number];
+
+// 자동 생성 미션의 경험치는 모델이 아니라 서버가 난이도로 정한다. (여기 한 곳)
+export const XP_BY_DIFFICULTY: Record<MissionDifficulty, number> = { easy: 10, medium: 20, hard: 30 };
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

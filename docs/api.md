@@ -837,7 +837,24 @@ $res.data.analysis
 
 모든 미션 API 는 `Authorization: Bearer <accessToken>` 헤더가 필요하고, 본인 미션만 다룹니다. 없는 미션이나 잘못된 id 형식은 404 `MISSION_NOT_FOUND` 입니다.
 
-미션 객체: `{ "id": "...", "date": "2026-11-12", "title": "...", "done": false, "xp": 10, "createdAt": "..." }`
+미션 객체:
+
+```json
+{ "id": "...", "date": "2026-11-12", "title": "...", "done": false, "xp": 10, "source": "ai", "reason": "...", "difficulty": "easy", "createdAt": "..." }
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| source | `ai`(AI 가 일기 분석으로 만듦), `default`(기본 미션), `manual`(`POST /api/missions` 로 직접 만듦) |
+| reason | 왜 이 미션인지 (60자 이내). `ai` 미션만 있고 나머지는 `null` |
+| difficulty | `easy` / `medium` / `hard`. 직접 만든 미션은 `null` |
+| xp | 자동 생성 미션은 서버가 난이도로 정합니다: easy 10, medium 20, hard 30. 기본 미션은 모두 easy(10) |
+
+### 오늘 미션 흐름 (클라이언트 호출 순서)
+
+1. `GET /api/missions` 로 오늘 미션을 읽습니다. 항상 빠르고 **조회만** 합니다. (예전처럼 기본 미션을 만들지 않습니다)
+2. 응답의 `generated` 가 `false` 면 `POST /api/missions/generate` 를 한 번 부르고, 그 응답을 그대로 화면에 씁니다. 이 호출만 AI 때문에 몇 초(최대 약 30초) 걸릴 수 있으니 로딩 표시를 해 주세요.
+3. 이후에는 `generated` 가 `true` 라서 `generate` 를 다시 부를 필요가 없습니다.
 
 ### GET /api/missions
 
@@ -845,7 +862,7 @@ $res.data.analysis
 | --- | --- |
 | date | `YYYY-MM-DD`. 없으면 한국 시간 기준 오늘 |
 
-날짜별 미션을 돌려줍니다. **오늘(한국 시간) 미션이 하나도 없으면 서버가 기본 미션 3개(각 xp 10)를 만들어 줍니다.** 지난 날짜나 미래 날짜는 만들지 않고 빈 배열을 돌려줍니다.
+날짜별 미션을 돌려줍니다. 미션이 없으면 빈 배열입니다. `generated` 는 그 날의 자동 생성 미션(`ai`/`default`)이 이미 있는지입니다.
 
 성공 (200)
 
@@ -855,20 +872,39 @@ $res.data.analysis
   "data": {
     "date": "2026-11-12",
     "missions": [
-      { "id": "...", "date": "2026-11-12", "title": "출근 후 오늘 할 일 3가지 적어보기", "done": false, "xp": 10, "createdAt": "..." }
+      { "id": "...", "date": "2026-11-12", "title": "회의 전 하고 싶은 말 한 줄 적기", "done": false, "xp": 10, "source": "ai", "reason": "회의가 부담됐다고 해서요", "difficulty": "easy", "createdAt": "..." }
     ],
     "doneCount": 0,
-    "total": 3
+    "total": 3,
+    "generated": true
   },
   "error": null
 }
 ```
 
-미션은 만든 시각 순이며, 한 번에 만든 미션(기본 미션 등)은 시각이 같아 순서가 바뀔 수 있습니다.
+정렬: 자동 생성 미션은 항상 같은 순서(slot 1→3)이고, 직접 만든 미션은 그 뒤에 만든 순서대로 옵니다.
 
 실패 (400) — `date` 형식 오류 (`VALIDATION_ERROR`)
 
+### POST /api/missions/generate
+
+오늘(한국 시간) 미션 3개를 만듭니다. body 는 필요 없습니다. **멱등**입니다.
+
+- 오늘 자동 생성 미션이 이미 있으면 AI 를 부르지 않고 기존 것을 **200** 으로 돌려줍니다.
+- 새로 만들었으면 **201** 입니다. 같은 사용자의 요청이 동시에 와도 3개를 넘지 않습니다. (DB 유니크 제약)
+- 입력은 최근 3일 안의 일기 분석(감정, 성장 방향, 다음 행동), 프로필(직무, 일하는 방식), 어제 미션과 완료 여부입니다. **일기 원문은 AI 로 보내지 않습니다.**
+- 아래 경우에는 AI 없이 또는 AI 실패 시 `source: "default"` 기본 미션 3개(각 xp 10)로 채우고 201 로 응답합니다. 오류로 내려가지 않습니다.
+  - 최근 3일 안에 분석된 일기가 없을 때
+  - AI 호출 실패, 시간 초과(호출당 20초, 재시도 포함 30초), 응답이 규칙에 맞지 않을 때(1회 재시도 후), AI 설정이 없을 때
+  - 가장 최근 일기 분석의 `safetyFlag` 가 `true` 일 때: AI 를 부르지 않고 마음 돌봄 중심의 기본 미션(오늘 힘든 점 한 줄 적어보기, 믿을 수 있는 사람에게 안부 물어보기, 잠깐 산책이나 스트레칭 하기)을 줍니다.
+- 이미 `POST /api/missions` 로 직접 만든 미션이 있어도 자동 생성은 진행됩니다. (직접 만든 미션은 개수 제한에 들지 않고 뒤에 정렬됩니다)
+- 분당 10회로 제한됩니다. (초과 시 429 `RATE_LIMITED`)
+
+성공 (200 또는 201) — `GET /api/missions` 와 같은 모양 (`generated` 는 항상 `true`)
+
 ### POST /api/missions
+
+사용자가 직접 미션을 만듭니다. (`source` 는 `manual`)
 
 | 필드 | 필수 | 규칙 |
 | --- | --- | --- |
@@ -888,7 +924,7 @@ $res.data.analysis
 {
   "success": true,
   "data": {
-    "mission": { "id": "...", "date": "2026-11-12", "title": "...", "done": true, "xp": 10, "createdAt": "..." },
+    "mission": { "id": "...", "date": "2026-11-12", "title": "...", "done": true, "xp": 10, "source": "ai", "reason": "...", "difficulty": "easy", "createdAt": "..." },
     "changed": true,
     "reward": { "stats": { "xp": 10, "level": 1, "title": "신입", "currentLevelXp": 0, "nextLevelXp": 50, "progress": 20, "streak": 1, "lastActiveDate": "2026-11-12" }, "gainedXp": 10, "leveledUp": false }
   },
