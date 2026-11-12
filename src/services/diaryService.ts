@@ -1,6 +1,8 @@
 import { AppError } from '../lib/AppError.js';
 import * as diaryRepository from '../repositories/diaryRepository.js';
 import type { DiaryRow } from '../repositories/diaryRepository.js';
+import { buildPatchColumns, toAnalysis } from './diaryAnalysis.js';
+import type { DiaryAnalysis } from './diaryAnalysis.js';
 import type { DiaryCreateInput, DiaryListQuery, DiaryPatchInput } from './diaryValidation.js';
 import * as statsService from './statsService.js';
 import type { AwardResult } from './statsService.js';
@@ -14,9 +16,11 @@ export interface Diary {
   messageId: string | null;
   createdAt: string;
   updatedAt: string;
+  // AI 분석. 아직 분석하지 않았거나 content/mood 가 수정돼 비워졌으면 null
+  analysis: DiaryAnalysis | null;
 }
 
-function toDiary(row: DiaryRow): Diary {
+export function toDiary(row: DiaryRow): Diary {
   return {
     id: row.id,
     date: row.date,
@@ -26,6 +30,7 @@ function toDiary(row: DiaryRow): Diary {
     messageId: row.message_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    analysis: toAnalysis(row.analysis, row.analyzed_at),
   };
 }
 
@@ -57,7 +62,10 @@ export async function get(userId: string, id: string): Promise<Diary> {
 }
 
 export async function update(userId: string, id: string, patch: DiaryPatchInput): Promise<Diary> {
-  const row = await diaryRepository.updateOwned(userId, id, patch);
+  const current = await diaryRepository.findOwned(userId, id);
+  if (!current) notFound();
+  // content 또는 mood 가 실제로 바뀌면 분석을 비워서 오래된 분석이 남지 않게 한다.
+  const row = await diaryRepository.updateOwned(userId, id, buildPatchColumns(current, patch));
   if (!row) notFound();
   return toDiary(row);
 }

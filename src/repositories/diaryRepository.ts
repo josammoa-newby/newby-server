@@ -9,10 +9,13 @@ export interface DiaryRow {
   message_id: string | null;
   created_at: string;
   updated_at: string;
+  // AI 분석(jsonb 객체)과 저장 시각. 분석이 없으면 둘 다 null
+  analysis: unknown;
+  analyzed_at: string | null;
 }
 
 // user_id 는 가져오지 않는다. 모든 쿼리는 user_id 로 한정한다. (service role 이라 RLS 가 막아주지 않는다)
-const COLUMNS = 'id, date, content, mood, source, message_id, created_at, updated_at';
+const COLUMNS = 'id, date, content, mood, source, message_id, created_at, updated_at, analysis, analyzed_at';
 
 export interface NewDiary {
   userId: string;
@@ -23,7 +26,14 @@ export interface NewDiary {
   messageId: string | null;
 }
 
-export type DiaryColumns = Partial<{ date: string; content: string; mood: string | null }>;
+// analysis / analyzed_at 은 content·mood 가 바뀌어 분석을 비울 때만 null 로 쓴다.
+export type DiaryColumns = Partial<{
+  date: string;
+  content: string;
+  mood: string | null;
+  analysis: null;
+  analyzed_at: null;
+}>;
 
 export async function insert(diary: NewDiary): Promise<DiaryRow> {
   const { data, error } = await supabase
@@ -80,6 +90,27 @@ export async function updateOwned(userId: string, id: string, columns: DiaryColu
     .eq('user_id', userId)
     .select(COLUMNS)
     .maybeSingle<DiaryRow>();
+  if (error) throw error;
+  return data;
+}
+
+// 분석을 저장한다. 분석한 content/mood 와 지금 값이 둘 다 같을 때만 저장하고, 아니면(수정됐거나 삭제됨) null.
+// (분석하는 동안 일기가 수정되어 오래된 분석이 남는 것을 막는다)
+export async function saveAnalysisIfUnchanged(
+  userId: string,
+  id: string,
+  expected: { content: string; mood: string | null },
+  analysis: object,
+  analyzedAt: string,
+): Promise<DiaryRow | null> {
+  const base = supabase
+    .from('diaries')
+    .update({ analysis, analyzed_at: analyzedAt })
+    .eq('id', id)
+    .eq('user_id', userId)
+    .eq('content', expected.content);
+  const filtered = expected.mood === null ? base.is('mood', null) : base.eq('mood', expected.mood);
+  const { data, error } = await filtered.select(COLUMNS).maybeSingle<DiaryRow>();
   if (error) throw error;
   return data;
 }
