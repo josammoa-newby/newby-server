@@ -1,8 +1,8 @@
 import type { Axis } from '../persona/types.js';
-import type { GeminiClient } from './gemini.js';
+import { getReasoningEffort } from './openai.js';
+import type { OpenAiClient } from './openai.js';
 import { getModel, TIMEOUT_MS } from './situation.js';
 
-export const FEEDBACK_TEMPERATURE = 0.3;
 export const MAX_NOTE_LENGTH = 200;
 export const HINT_AXES: readonly Axis[] = ['directness', 'control', 'reporting', 'warmth', 'speed', 'stability'];
 
@@ -17,30 +17,40 @@ export interface FeedbackAnalysis {
   axisHint: AxisHint | null;
 }
 
-const ANALYSIS_SCHEMA = {
-  type: 'OBJECT',
+// OpenAI strict json_schema: 모든 필드 required, additionalProperties:false. 값이 없는 경우는 null 로 답하게 한다.
+export const ANALYSIS_SCHEMA = {
+  type: 'object',
   properties: {
-    new_note: { type: 'STRING', nullable: true, description: '이 상사에 대해 새로 알게 된 사실 한 문장. 없으면 null' },
+    new_note: { type: ['string', 'null'], description: '이 상사에 대해 새로 알게 된 사실 한 문장. 없으면 null' },
     axis_hint: {
-      type: 'OBJECT',
-      nullable: true,
+      anyOf: [
+        {
+          type: 'object',
+          properties: {
+            axis: { type: 'string', enum: [...HINT_AXES] },
+            dir: { type: 'integer', enum: [1, -1], description: '+1 또는 -1' },
+          },
+          required: ['axis', 'dir'],
+          additionalProperties: false,
+        },
+        { type: 'null' },
+      ],
       description: 'AI 해석이 틀린 성향 축과 이동 방향. 확실하지 않으면 null',
-      properties: {
-        axis: { type: 'STRING', enum: [...HINT_AXES] },
-        dir: { type: 'INTEGER', description: '+1 또는 -1' },
-      },
-      required: ['axis', 'dir'],
     },
   },
   required: ['new_note', 'axis_hint'],
-  propertyOrdering: ['new_note', 'axis_hint'],
+  additionalProperties: false,
 } as const;
 
-const SUMMARY_SCHEMA = {
-  type: 'OBJECT',
-  properties: { summary: { type: 'STRING', description: '1~2문장 요약' } },
+export const SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: { summary: { type: 'string', description: '1~2문장 요약' } },
   required: ['summary'],
+  additionalProperties: false,
 } as const;
+
+const ANALYSIS_SCHEMA_NAME = 'feedback_analysis';
+const SUMMARY_SCHEMA_NAME = 'notes_summary';
 
 const NOTES_TAG = 'learned_notes';
 const REACTION_TAG = 'actual_reaction';
@@ -112,16 +122,16 @@ export interface AnalysisInput {
   learnedNotes: string[];
 }
 
-// Gemini 호출 1번. 호출 실패나 올바르지 않은 응답은 오류로 던진다. (호출한 쪽에서 피드백만 저장하고 넘어간다)
-export async function analyzeFeedback(input: AnalysisInput, client: GeminiClient): Promise<FeedbackAnalysis> {
+// OpenAI 호출 1번. 호출 실패나 올바르지 않은 응답은 오류로 던진다. (호출한 쪽에서 피드백만 저장하고 넘어간다)
+export async function analyzeFeedback(input: AnalysisInput, client: OpenAiClient): Promise<FeedbackAnalysis> {
   const raw = await client.generateJson({
     model: getModel(),
-    systemInstruction: buildAnalysisSystemPrompt(input.learnedNotes),
-    contents: [{ role: 'user', parts: [{ text: buildAnalysisContent(input.intent, input.actualReaction) }] }],
-    temperature: FEEDBACK_TEMPERATURE,
-    responseSchema: ANALYSIS_SCHEMA,
+    instructions: buildAnalysisSystemPrompt(input.learnedNotes),
+    messages: [{ role: 'user', text: buildAnalysisContent(input.intent, input.actualReaction) }],
+    schemaName: ANALYSIS_SCHEMA_NAME,
+    schema: ANALYSIS_SCHEMA,
+    reasoningEffort: getReasoningEffort(),
     timeoutMs: TIMEOUT_MS,
-    thinkingLevel: 'LOW',
   });
   const parsed = parseAnalysis(raw);
   if (!parsed) throw new Error('Invalid feedback analysis response');
@@ -129,21 +139,16 @@ export async function analyzeFeedback(input: AnalysisInput, client: GeminiClient
 }
 
 // 오래된 학습 메모를 1~2문장으로 합친다. 호출 실패나 빈 응답은 오류로 던진다.
-export async function summarizeNotes(notes: string[], client: GeminiClient): Promise<string> {
+export async function summarizeNotes(notes: string[], client: OpenAiClient): Promise<string> {
   const list = notes.map(clean).filter((n) => n !== '');
   const raw = await client.generateJson({
     model: getModel(),
-    systemInstruction: `아래는 한 상사에 대해 쌓인 메모들이다. 중복과 사소한 내용은 빼고 핵심만 1~2문장으로 합쳐라. 새로운 사실을 지어내지 않는다. ※ <${NOTES_TAG}> ${DATA_NOTICE}`,
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: `<${NOTES_TAG}>\n${list.map((n) => `- ${n}`).join('\n')}\n</${NOTES_TAG}>` }],
-      },
-    ],
-    temperature: FEEDBACK_TEMPERATURE,
-    responseSchema: SUMMARY_SCHEMA,
+    instructions: `아래는 한 상사에 대해 쌓인 메모들이다. 중복과 사소한 내용은 빼고 핵심만 1~2문장으로 합쳐라. 새로운 사실을 지어내지 않는다. ※ <${NOTES_TAG}> ${DATA_NOTICE}`,
+    messages: [{ role: 'user', text: `<${NOTES_TAG}>\n${list.map((n) => `- ${n}`).join('\n')}\n</${NOTES_TAG}>` }],
+    schemaName: SUMMARY_SCHEMA_NAME,
+    schema: SUMMARY_SCHEMA,
+    reasoningEffort: getReasoningEffort(),
     timeoutMs: TIMEOUT_MS,
-    thinkingLevel: 'LOW',
   });
 
   let summary: unknown;

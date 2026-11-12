@@ -571,9 +571,9 @@ $sessionId = $res.data.session.id
 | 404 | SESSION_NOT_FOUND | 내 세션이 아니거나 없는 세션, 잘못된 id 형식 |
 | 404 | SUPERVISOR_NOT_FOUND | 세션에 연결된 상사가 없거나 삭제됨 |
 | 429 | RATE_LIMITED | 분당 10회 초과 |
-| 500 | AI_NOT_CONFIGURED | 서버에 Gemini 키가 설정되지 않음 |
-| 502 | AI_UNAVAILABLE | Gemini 호출 실패 또는 30초 초과 |
-| 502 | AI_RESPONSE_INVALID | AI 응답이 형식에 맞지 않아 1회 재시도했지만 실패 |
+| 500 | AI_NOT_CONFIGURED | 서버에 OpenAI 키가 설정되지 않음 (`OPENAI_REASONING_EFFORT` 값이 올바르지 않을 때도) |
+| 502 | AI_UNAVAILABLE | OpenAI 호출 실패 또는 30초 초과 |
+| 502 | AI_RESPONSE_INVALID | AI 응답이 형식에 맞지 않아 1회 재시도했지만 실패, 또는 모델이 답변을 거절(refusal)함 (거절은 재시도하지 않음) |
 
 `AI_UNAVAILABLE`, `AI_RESPONSE_INVALID` 일 때도 사용자의 메시지는 저장된 상태로 남습니다. 같은 문장을 다시 보내면 사용자 메시지가 중복 저장됩니다.
 

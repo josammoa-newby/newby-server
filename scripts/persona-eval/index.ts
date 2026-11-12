@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { getGeminiClient } from '../../src/ai/gemini.js';
+import { getOpenAiClient, getReasoningEffort } from '../../src/ai/openai.js';
 import { getModel } from '../../src/ai/situation.js';
 import { CASES } from './cases.js';
 import type { EvalCase } from './cases.js';
@@ -58,15 +58,15 @@ function parseArgs(argv: string[]): Options {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (!process.env.GEMINI_API_KEY) fail('GEMINI_API_KEY 가 설정되어 있지 않아요 (.env 확인)');
+  if (!process.env.OPENAI_API_KEY) fail('OPENAI_API_KEY 가 설정되어 있지 않아요 (.env 확인)');
 
   const cases: EvalCase[] = CASES.filter((c) => !options.only || options.only.includes(c.id));
   const bosses = BOSSES.filter((b) => !options.boss || b.key === options.boss);
-  const client = withPacing(getGeminiClient(), options.interval);
+  const client = withPacing(getOpenAiClient(), options.interval);
   const model = getModel();
   const startedAt = new Date().toISOString();
 
-  console.log(`모델 ${model} / 케이스 ${cases.length} x 상사 ${bosses.length} = ${cases.length * bosses.length}호출${options.judge ? ' + 평가자' : ''}`);
+  console.log(`모델 ${model} (reasoning ${getReasoningEffort()}) / 케이스 ${cases.length} x 상사 ${bosses.length} = ${cases.length * bosses.length}호출${options.judge ? ' + 평가자' : ''}`);
 
   const results = await runAll(cases, bosses, client, (result, done, total) => {
     const status = result.answer ? `ok safety=${result.answer.safety_flag}` : `FAIL ${result.error?.slice(0, 80)}`;

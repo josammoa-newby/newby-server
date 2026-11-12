@@ -147,21 +147,25 @@ ${noteLines}
 ${FEW_SHOT}`;
 }
 
-// Gemini responseSchema (OpenAPI 부분집합). follow_up_question 만 필수가 아니다.
+// OpenAI strict json_schema. strict 는 모든 필드를 required 에 넣어야 해서 follow_up_question 도 required 이고,
+// 값이 없을 때는 null 로 답하게 한다(type ["string","null"]). 필드 순서는 RESPONSE_FIELDS 를 따른다.
 export function getResponseSchema() {
   return {
-    type: 'OBJECT',
+    type: 'object',
     properties: {
-      intent: { type: 'STRING', description: '상사의 말이나 상황에 담긴 의도 해석' },
-      confidence: { type: 'STRING', enum: ['high', 'medium', 'low'], description: '해석의 확신 정도' },
-      persona_basis: { type: 'ARRAY', items: { type: 'STRING' }, description: '해석에 사용한 성향/정보 (1~3개)' },
-      recommended_action: { type: 'STRING', description: '지금 하면 좋은 행동' },
-      suggested_message: { type: 'STRING', description: '상사에게 보낼 말 제안' },
-      avoid: { type: 'STRING', description: '피해야 할 행동이나 표현' },
-      follow_up_question: { type: 'STRING', nullable: true, description: '정확도를 높이기 위해 되물을 질문' },
-      safety_flag: { type: 'BOOLEAN', description: '직장 내 괴롭힘 등 안전 이슈 여부' },
+      intent: { type: 'string', description: '상사의 말이나 상황에 담긴 의도 해석' },
+      confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: '해석의 확신 정도' },
+      persona_basis: { type: 'array', items: { type: 'string' }, description: '해석에 사용한 성향/정보 (1~3개)' },
+      recommended_action: { type: 'string', description: '지금 하면 좋은 행동' },
+      suggested_message: { type: 'string', description: '상사에게 보낼 말 제안' },
+      avoid: { type: 'string', description: '피해야 할 행동이나 표현' },
+      follow_up_question: {
+        type: ['string', 'null'],
+        description: '정확도를 높이기 위해 되물을 질문. 없으면 null',
+      },
+      safety_flag: { type: 'boolean', description: '직장 내 괴롭힘 등 안전 이슈 여부' },
     },
-    required: RESPONSE_FIELDS.filter((field) => field !== 'follow_up_question'),
-    propertyOrdering: [...RESPONSE_FIELDS],
+    required: [...RESPONSE_FIELDS],
+    additionalProperties: false,
   } as const;
 }

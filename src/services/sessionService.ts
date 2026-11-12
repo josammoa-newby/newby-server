@@ -1,5 +1,5 @@
-import { getGeminiClient } from '../ai/gemini.js';
-import type { GeminiClient } from '../ai/gemini.js';
+import { getOpenAiClient } from '../ai/openai.js';
+import type { OpenAiClient } from '../ai/openai.js';
 import { askSituation, MAX_HISTORY, summarize } from '../ai/situation.js';
 import { AppError } from '../lib/AppError.js';
 import * as sessionRepository from '../repositories/sessionRepository.js';
@@ -67,12 +67,12 @@ export async function getSession(
   return { session: toSession(session), messages: messages.map(toMessage) };
 }
 
-// Gemini 호출이 실패해도 user 메시지는 저장된 채로 남는다. 같은 문장으로 다시 보내면 중복 저장된다.
+// OpenAI 호출이 실패해도 user 메시지는 저장된 채로 남는다. 같은 문장으로 다시 보내면 중복 저장된다.
 export async function sendMessage(
   userId: string,
   id: string,
   text: string,
-  client?: GeminiClient,
+  client?: OpenAiClient,
 ): Promise<{ userMessage: MessageView; aiMessage: MessageView }> {
   const session = await findMySession(userId, id);
   if (!session.supervisor_id) throw supervisorNotFound();
@@ -80,12 +80,12 @@ export async function sendMessage(
   if (!supervisor) throw supervisorNotFound();
 
   // 키가 없으면 user 메시지를 저장하기 전에 실패시킨다.
-  const gemini = client ?? getGeminiClient();
+  const ai = client ?? getOpenAiClient();
 
   const history = await sessionRepository.listRecentMessages(session.id, MAX_HISTORY);
   const userMessage = await sessionRepository.insertMessage(session.id, 'user', text, null);
 
-  const answer = await askSituation({ supervisor, history, userText: text }, gemini);
+  const answer = await askSituation({ supervisor, history, userText: text }, ai);
   const aiMessage = await sessionRepository.insertMessage(session.id, 'ai', summarize(answer), answer);
 
   return { userMessage: toMessage(userMessage), aiMessage: toMessage(aiMessage) };

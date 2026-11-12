@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "persona:eval": "tsx scripts/persona-eval/index.ts"
+    "persona:eval": "tsx scripts/persona-eval/index.ts",
+    "ai:smoke": "tsx scripts/ai-smoke.ts"
   },
   "repository": {
     "type": "git",
@@ -21,12 +22,12 @@
   },
   "homepage": "https://github.com/josammoa-newby/newby-server#readme",
   "dependencies": {
-    "@google/genai": "^2.31.0",
     "@supabase/supabase-js": "^2.118.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.8",
     "express": "^5.3.0",
-    "morgan": "^1.12.1"
+    "morgan": "^1.12.1",
+    "openai": "^7.55.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

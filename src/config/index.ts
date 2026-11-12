@@ -22,6 +22,6 @@ export const config = {
   supabaseUrl: required('SUPABASE_URL'),
   supabaseAnonKey: required('SUPABASE_ANON_KEY'),
   supabaseServiceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
-  // AI 기능은 아직 없으므로 선택값. 연동 시 required 로 변경
-  geminiApiKey: process.env.GEMINI_API_KEY || undefined,
+  // 선택값. 없어도 서버는 시작하고, AI 를 호출할 때 500 AI_NOT_CONFIGURED 로 답한다
+  openaiApiKey: process.env.OPENAI_API_KEY || undefined,
 };

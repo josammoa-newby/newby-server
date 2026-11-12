@@ -1,7 +1,7 @@
-// 피드백 처리 흐름. DB/Gemini 접근은 deps 로 주입받아 목으로 테스트할 수 있다. (supabase 를 직접 import 하지 않는다)
+// 피드백 처리 흐름. DB/OpenAI 접근은 deps 로 주입받아 목으로 테스트할 수 있다. (supabase 를 직접 import 하지 않는다)
 import { analyzeFeedback, summarizeNotes } from '../ai/feedback.js';
 import type { AxisHint, FeedbackAnalysis } from '../ai/feedback.js';
-import type { GeminiClient } from '../ai/gemini.js';
+import type { OpenAiClient } from '../ai/openai.js';
 import { AppError } from '../lib/AppError.js';
 import type { Axis } from '../persona/types.js';
 import type { SupervisorRow } from './supervisorMapper.js';
@@ -45,8 +45,8 @@ export interface FeedbackDeps {
   updateScoreAdjust(userId: string, supervisorId: string, adjust: Partial<Record<Axis, number>>): Promise<void>;
   listPendingHints(supervisorId: string): Promise<PendingHint[]>;
   markApplied(ids: string[]): Promise<void>;
-  // Gemini 클라이언트. 키가 없으면 던질 수 있다. (피드백 저장은 계속한다)
-  getClient(): GeminiClient;
+  // OpenAI 클라이언트. 키가 없으면 던질 수 있다. (피드백 저장은 계속한다)
+  getClient(): OpenAiClient;
 }
 
 export interface FeedbackResult {
@@ -95,7 +95,7 @@ export function pickHintsToApply(pending: PendingHint[], hint: AxisHint): Pendin
   return same.length >= APPLY_THRESHOLD ? same.slice(0, APPLY_THRESHOLD) : null;
 }
 
-function safeClient(deps: FeedbackDeps): GeminiClient | null {
+function safeClient(deps: FeedbackDeps): OpenAiClient | null {
   try {
     return deps.getClient();
   } catch {
@@ -112,7 +112,7 @@ async function analyze(
   try {
     return await analyzeFeedback(input, client);
   } catch {
-    // Gemini 실패해도 피드백은 저장한다. 오류 내용은 남기지 않는다.
+    // OpenAI 실패해도 피드백은 저장한다. 오류 내용은 남기지 않는다.
     console.error('Feedback analysis failed');
     return null;
   }
