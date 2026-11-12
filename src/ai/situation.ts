@@ -5,18 +5,18 @@ import { buildRuleLines } from '../persona/rules.js';
 import { applyAdjust, getTypeName } from '../persona/scoring.js';
 import type { PersonaScores } from '../persona/types.js';
 import type { SupervisorRow } from '../services/supervisorMapper.js';
-import type { GeminiClient, GeminiContent } from './gemini.js';
+import { getReasoningEffort } from './openai.js';
+import type { AiMessage, OpenAiClient } from './openai.js';
 
-export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+export const DEFAULT_MODEL = 'gpt-6-luna';
 
-// 기본은 gemini-3.5-flash-lite. (gemini-2.5-* 는 신규 프로젝트에서 막혀 있고, gemini-3.8-flash 는 현재 키에서 응답하지 않는다.) GEMINI_MODEL 로 바꿀 수 있다.
+// 기본은 gpt-6-luna. OPENAI_MODEL 로 바꿀 수 있다. Responses API 와 구조화 출력(json_schema strict)을 지원하는 모델이어야 한다.
 export function getModel(): string {
-  return process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  return process.env.OPENAI_MODEL || DEFAULT_MODEL;
 }
-export const TEMPERATURE = 0.4;
 export const TIMEOUT_MS = 30_000;
-export const THINKING_LEVEL = 'LOW';
 export const MAX_HISTORY = 10;
+export const SCHEMA_NAME = 'situation_answer';
 
 const RETRY_INSTRUCTION = '위 상사 프로필을 근거로 persona_basis를 채워서 다시 답하라';
 const CONFIDENCES = ['high', 'medium', 'low'] as const;
@@ -63,17 +63,17 @@ export function toPromptInput(row: SupervisorRow): PromptInput {
   };
 }
 
-// 최근 MAX_HISTORY 개만 쓰고 ai -> model 로 바꾼다. 맨 앞의 model 턴(첫 인사 등)은 빼서 user 턴으로 시작하게 한다.
-export function toContents(history: HistoryMessage[], userText: string): GeminiContent[] {
-  const turns: GeminiContent[] = history
+// 최근 MAX_HISTORY 개만 쓰고 ai -> assistant 로 바꾼다. 맨 앞의 assistant 턴(첫 인사 등)은 빼서 user 턴으로 시작하게 한다.
+export function toMessages(history: HistoryMessage[], userText: string): AiMessage[] {
+  const turns: AiMessage[] = history
     .slice(-MAX_HISTORY)
     .filter((message) => message.text !== null && message.text.trim() !== '')
     .map((message) => ({
-      role: message.role === 'ai' ? 'model' : 'user',
-      parts: [{ text: message.text as string }],
+      role: message.role === 'ai' ? 'assistant' : 'user',
+      text: message.text as string,
     }));
-  while (turns.length > 0 && turns[0].role === 'model') turns.shift();
-  return [...turns, { role: 'user', parts: [{ text: userText }] }];
+  while (turns.length > 0 && turns[0].role === 'assistant') turns.shift();
+  return [...turns, { role: 'user', text: userText }];
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -122,27 +122,28 @@ export interface AskSituationInput {
   userText: string;
 }
 
-// Gemini 호출 자체가 실패하면 client 가 502 AI_UNAVAILABLE 을 던진다. 응답이 올바르지 않으면 딱 1회만 다시 묻는다.
-export async function askSituation(input: AskSituationInput, client: GeminiClient): Promise<AiAnswer> {
-  const systemInstruction = buildSystemPrompt(toPromptInput(input.supervisor));
-  const responseSchema = getResponseSchema();
-  const contents = toContents(input.history, input.userText);
+// OpenAI 호출 자체가 실패하면 client 가 502 AI_UNAVAILABLE 을, refusal 이 오면 502 AI_RESPONSE_INVALID 를 던진다(재시도하지 않는다).
+// 응답 JSON 이 깨졌거나 persona_basis 가 비었으면 딱 1회만 다시 묻는다.
+export async function askSituation(input: AskSituationInput, client: OpenAiClient): Promise<AiAnswer> {
+  const instructions = buildSystemPrompt(toPromptInput(input.supervisor));
+  const schema = getResponseSchema();
+  const messages = toMessages(input.history, input.userText);
 
-  const call = (turns: GeminiContent[]) =>
+  const call = (turns: AiMessage[]) =>
     client.generateJson({
       model: getModel(),
-      systemInstruction,
-      contents: turns,
-      temperature: TEMPERATURE,
-      responseSchema,
+      instructions,
+      messages: turns,
+      schemaName: SCHEMA_NAME,
+      schema,
+      reasoningEffort: getReasoningEffort(),
       timeoutMs: TIMEOUT_MS,
-      thinkingLevel: THINKING_LEVEL,
     });
 
-  const first = parseAnswer(await call(contents));
+  const first = parseAnswer(await call(messages));
   if (first) return first;
 
-  const retry = parseAnswer(await call([...contents, { role: 'user', parts: [{ text: RETRY_INSTRUCTION }] }]));
+  const retry = parseAnswer(await call([...messages, { role: 'user', text: RETRY_INSTRUCTION }]));
   if (retry) return retry;
 
   throw new AppError(502, 'AI_RESPONSE_INVALID', 'AI 응답을 이해하지 못했어요. 잠시 후 다시 시도해주세요');

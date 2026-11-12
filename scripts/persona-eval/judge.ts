@@ -1,4 +1,5 @@
-import type { GeminiClient } from '../../src/ai/gemini.js';
+import { getReasoningEffort } from '../../src/ai/openai.js';
+import type { OpenAiClient } from '../../src/ai/openai.js';
 import { getModel, toPromptInput } from '../../src/ai/situation.js';
 import type { EvalCase } from './cases.js';
 import { getBoss } from './fixtures.js';
@@ -15,23 +16,26 @@ export type JudgeVerdicts = Record<string, JudgeVerdict>;
 
 const JUDGE_TIMEOUT_MS = 30_000;
 
-const SCHEMA = {
-  type: 'OBJECT',
+// OpenAI strict json_schema (모든 필드 required, additionalProperties:false)
+export const JUDGE_SCHEMA = {
+  type: 'object',
   properties: {
     items: {
-      type: 'ARRAY',
+      type: 'array',
       items: {
-        type: 'OBJECT',
+        type: 'object',
         properties: {
-          id: { type: 'STRING' },
-          pass: { type: 'BOOLEAN' },
-          reason: { type: 'STRING' },
+          id: { type: 'string' },
+          pass: { type: 'boolean' },
+          reason: { type: 'string' },
         },
         required: ['id', 'pass', 'reason'],
+        additionalProperties: false,
       },
     },
   },
   required: ['items'],
+  additionalProperties: false,
 } as const;
 
 const SYSTEM = `너는 AI 상담 답변의 품질을 평가하는 엄격한 평가자다.
@@ -90,11 +94,11 @@ export function itemsFor(evalCase: EvalCase, bosses: BossKey[]): { id: string; q
   return items;
 }
 
-// 케이스 하나를 평가자(Gemini)에게 한 번 보낸다. 평가 항목이 없으면 호출하지 않는다.
+// 케이스 하나를 평가자(OpenAI)에게 한 번 보낸다. 평가 항목이 없으면 호출하지 않는다.
 export async function judgeCase(
   evalCase: EvalCase,
   results: CallResult[],
-  client: GeminiClient,
+  client: OpenAiClient,
 ): Promise<JudgeVerdicts> {
   const ok = results.filter((r) => r.answer);
   const items = itemsFor(evalCase, ok.map((r) => r.boss));
@@ -124,12 +128,12 @@ export async function judgeCase(
 
   const raw = await client.generateJson({
     model: getModel(),
-    systemInstruction: SYSTEM,
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    temperature: 0,
-    responseSchema: SCHEMA,
+    instructions: SYSTEM,
+    messages: [{ role: 'user', text: prompt }],
+    schemaName: 'eval_judge',
+    schema: JUDGE_SCHEMA,
+    reasoningEffort: getReasoningEffort(),
     timeoutMs: JUDGE_TIMEOUT_MS,
-    thinkingLevel: 'LOW',
   });
 
   const verdicts: JudgeVerdicts = {};

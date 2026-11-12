@@ -5,19 +5,20 @@ import { getResponseSchema } from '../persona/promptBuilder.js';
 import { scorePersona } from '../persona/scoring.js';
 import type { Answers } from '../persona/types.js';
 import type { SupervisorRow } from '../services/supervisorMapper.js';
-import type { GeminiClient, GenerateJsonParams } from './gemini.js';
+import type { GenerateJsonParams, OpenAiClient } from './openai.js';
 import {
   askSituation,
   DEFAULT_MODEL,
   getModel,
   MAX_HISTORY,
   parseAnswer,
+  SCHEMA_NAME,
   summarize,
-  TEMPERATURE,
   TIMEOUT_MS,
-  toContents,
+  toMessages,
   toPromptInput,
 } from './situation.js';
+import { findStrictViolations } from './strictSchema.js';
 import type { HistoryMessage } from './situation.js';
 
 const CONSISTENT: Answers = {
@@ -62,10 +63,10 @@ const VALID = {
 };
 const json = (overrides: Record<string, unknown> = {}) => JSON.stringify({ ...VALID, ...overrides });
 
-// 실제 Gemini 를 부르지 않는 목. 준비한 응답(또는 오류)을 차례로 돌려준다.
+// 실제 OpenAI 를 부르지 않는 목. 준비한 응답(또는 오류)을 차례로 돌려준다.
 function mockClient(responses: (string | Error)[]) {
   const calls: GenerateJsonParams[] = [];
-  const client: GeminiClient = {
+  const client: OpenAiClient = {
     async generateJson(params) {
       calls.push(params);
       const next = responses.shift();
@@ -77,7 +78,7 @@ function mockClient(responses: (string | Error)[]) {
   return { client, calls };
 }
 
-const ask = (client: GeminiClient, history: HistoryMessage[] = [], userText = '보고서 냈더니 검토해보자고 했어') =>
+const ask = (client: OpenAiClient, history: HistoryMessage[] = [], userText = '보고서 냈더니 검토해보자고 했어') =>
   askSituation({ supervisor: supervisor(), history, userText }, client);
 
 describe('toPromptInput', () => {
@@ -106,34 +107,34 @@ describe('toPromptInput', () => {
   });
 });
 
-describe('toContents', () => {
-  it('마지막은 이번 userText 이고 ai 는 model 로 바뀐다', () => {
-    const contents = toContents(
+describe('toMessages', () => {
+  it('마지막은 이번 userText 이고 ai 는 assistant 로 바뀐다', () => {
+    const messages = toMessages(
       [
         { role: 'user', text: '첫 질문' },
         { role: 'ai', text: '첫 답변' },
       ],
       '두번째 질문',
     );
-    assert.deepEqual(contents, [
-      { role: 'user', parts: [{ text: '첫 질문' }] },
-      { role: 'model', parts: [{ text: '첫 답변' }] },
-      { role: 'user', parts: [{ text: '두번째 질문' }] },
+    assert.deepEqual(messages, [
+      { role: 'user', text: '첫 질문' },
+      { role: 'assistant', text: '첫 답변' },
+      { role: 'user', text: '두번째 질문' },
     ]);
   });
 
   it('history 는 최근 10개만 쓴다', () => {
     const history: HistoryMessage[] = Array.from({ length: 15 }, (_, i) => ({ role: 'user', text: `m${i}` }));
-    const contents = toContents(history, '지금');
+    const messages = toMessages(history, '지금');
     assert.equal(MAX_HISTORY, 10);
-    assert.equal(contents.length, 11);
-    assert.equal(contents[0].parts[0].text, 'm5');
-    assert.equal(contents[9].parts[0].text, 'm14');
-    assert.equal(contents[10].parts[0].text, '지금');
+    assert.equal(messages.length, 11);
+    assert.equal(messages[0].text, 'm5');
+    assert.equal(messages[9].text, 'm14');
+    assert.equal(messages[10].text, '지금');
   });
 
-  it('맨 앞의 model 턴(첫 인사)은 빼고 빈 텍스트는 건너뛴다', () => {
-    const contents = toContents(
+  it('맨 앞의 assistant 턴(첫 인사)은 빼고 빈 텍스트는 건너뛴다', () => {
+    const messages = toMessages(
       [
         { role: 'ai', text: '이랑 무슨 일 있었어?' },
         { role: 'user', text: '질문' },
@@ -143,7 +144,7 @@ describe('toContents', () => {
       '지금',
     );
     assert.deepEqual(
-      contents.map((c) => [c.role, c.parts[0].text]),
+      messages.map((m) => [m.role, m.text]),
       [
         ['user', '질문'],
         ['user', '지금'],
@@ -152,7 +153,7 @@ describe('toContents', () => {
   });
 
   it('history 가 비어 있으면 userText 만', () => {
-    assert.deepEqual(toContents([], '지금'), [{ role: 'user', parts: [{ text: '지금' }] }]);
+    assert.deepEqual(toMessages([], '지금'), [{ role: 'user', text: '지금' }]);
   });
 });
 
@@ -195,16 +196,18 @@ describe('askSituation', () => {
     assert.equal(calls.length, 1);
     const call = calls[0];
     assert.equal(call.model, getModel());
-    assert.equal(DEFAULT_MODEL, 'gemini-3.5-flash-lite');
-    assert.equal(call.thinkingLevel, 'LOW');
-    assert.equal(call.temperature, TEMPERATURE);
-    assert.equal(call.temperature, 0.4);
+    assert.equal(DEFAULT_MODEL, 'gpt-6-luna');
+    assert.equal(call.reasoningEffort, 'low');
+    // temperature 는 요청에 없다 (effort 가 none 이 아니면 보낼 수 없다)
+    assert.ok(!('temperature' in call));
     assert.equal(call.timeoutMs, TIMEOUT_MS);
     assert.equal(call.timeoutMs, 30_000);
-    assert.deepEqual(call.responseSchema, getResponseSchema());
-    assert.ok(call.systemInstruction.includes('김팀장'));
-    assert.ok(call.systemInstruction.includes('레이더형 팀장'));
-    assert.deepEqual(call.contents.at(-1), { role: 'user', parts: [{ text: '보고서 냈더니 검토해보자고 했어' }] });
+    assert.equal(call.schemaName, SCHEMA_NAME);
+    assert.deepEqual(call.schema, getResponseSchema());
+    assert.deepEqual(findStrictViolations(call.schema), []);
+    assert.ok(call.instructions.includes('김팀장'));
+    assert.ok(call.instructions.includes('레이더형 팀장'));
+    assert.deepEqual(call.messages.at(-1), { role: 'user', text: '보고서 냈더니 검토해보자고 했어' });
   });
 
   it('JSON 이 깨지면 안내 문장을 붙여 한 번 재시도하고 성공하면 그 응답을 쓴다', async () => {
@@ -212,10 +215,10 @@ describe('askSituation', () => {
     const answer = await ask(client);
     assert.equal(answer.intent, '재시도 성공');
     assert.equal(calls.length, 2);
-    assert.equal(calls[1].contents.length, calls[0].contents.length + 1);
-    assert.deepEqual(calls[1].contents.at(-1), {
+    assert.equal(calls[1].messages.length, calls[0].messages.length + 1);
+    assert.deepEqual(calls[1].messages.at(-1), {
       role: 'user',
-      parts: [{ text: '위 상사 프로필을 근거로 persona_basis를 채워서 다시 답하라' }],
+      text: '위 상사 프로필을 근거로 persona_basis를 채워서 다시 답하라',
     });
   });
 
@@ -241,41 +244,48 @@ describe('askSituation', () => {
     assert.equal(calls.length, 2);
   });
 
-  it('Gemini 호출 자체가 실패하면 그 오류를 그대로 던지고 재시도하지 않는다', async () => {
+  it('OpenAI 호출 자체가 실패하면 그 오류를 그대로 던지고 재시도하지 않는다', async () => {
     const failure = new AppError(502, 'AI_UNAVAILABLE', 'down');
     const { client, calls } = mockClient([failure]);
     await assert.rejects(() => ask(client), failure);
     assert.equal(calls.length, 1);
   });
 
-  it('history 는 10개로 제한되고 ai 는 model 역할로 넘어간다', async () => {
+  it('refusal(AI_RESPONSE_INVALID)은 재시도하지 않고 그대로 던진다', async () => {
+    const refusal = new AppError(502, 'AI_RESPONSE_INVALID', 'refused');
+    const { client, calls } = mockClient([refusal, json()]);
+    await assert.rejects(() => ask(client), refusal);
+    assert.equal(calls.length, 1);
+  });
+
+  it('history 는 10개로 제한되고 ai 는 assistant 역할로 넘어간다', async () => {
     const history: HistoryMessage[] = Array.from({ length: 14 }, (_, i) => ({
       role: i % 2 === 0 ? 'user' : 'ai',
       text: `m${i}`,
     }));
     const { client, calls } = mockClient([json()]);
     await ask(client, history);
-    const contents = calls[0].contents;
+    const messages = calls[0].messages;
     // 최근 10개(m4~m13)는 user 로 시작해 그대로, 마지막에 이번 질문
-    assert.equal(contents.length, 11);
-    assert.deepEqual(contents.slice(0, 10).map((c) => c.role), [
-      'user', 'model', 'user', 'model', 'user', 'model', 'user', 'model', 'user', 'model',
+    assert.equal(messages.length, 11);
+    assert.deepEqual(messages.slice(0, 10).map((m) => m.role), [
+      'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant',
     ]);
-    assert.equal(contents[0].parts[0].text, 'm4');
+    assert.equal(messages[0].text, 'm4');
   });
 });
 
 describe('getModel', () => {
-  it('기본은 gemini-3.5-flash-lite 이고 GEMINI_MODEL 로 바꿀 수 있다', () => {
-    const saved = process.env.GEMINI_MODEL;
+  it('기본은 gpt-6-luna 이고 OPENAI_MODEL 로 바꿀 수 있다', () => {
+    const saved = process.env.OPENAI_MODEL;
     try {
-      delete process.env.GEMINI_MODEL;
-      assert.equal(getModel(), 'gemini-3.5-flash-lite');
-      process.env.GEMINI_MODEL = 'some-other-model';
-      assert.equal(getModel(), 'some-other-model');
+      delete process.env.OPENAI_MODEL;
+      assert.equal(getModel(), 'gpt-6-luna');
+      process.env.OPENAI_MODEL = 'gpt-6.1-terra';
+      assert.equal(getModel(), 'gpt-6.1-terra');
     } finally {
-      if (saved === undefined) delete process.env.GEMINI_MODEL;
-      else process.env.GEMINI_MODEL = saved;
+      if (saved === undefined) delete process.env.OPENAI_MODEL;
+      else process.env.OPENAI_MODEL = saved;
     }
   });
 });

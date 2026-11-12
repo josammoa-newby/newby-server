@@ -1,18 +1,21 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { GeminiClient, GenerateJsonParams } from './gemini.js';
+import type { GenerateJsonParams, OpenAiClient } from './openai.js';
 import {
+  ANALYSIS_SCHEMA,
   analyzeFeedback,
   buildAnalysisContent,
   buildAnalysisSystemPrompt,
   MAX_NOTE_LENGTH,
   parseAnalysis,
+  SUMMARY_SCHEMA,
   summarizeNotes,
 } from './feedback.js';
+import { findStrictViolations } from './strictSchema.js';
 
 function mockClient(raw: string | Error) {
   const calls: GenerateJsonParams[] = [];
-  const client: GeminiClient = {
+  const client: OpenAiClient = {
     async generateJson(params) {
       calls.push(params);
       if (raw instanceof Error) throw raw;
@@ -72,13 +75,27 @@ describe('프롬프트', () => {
   });
 });
 
+describe('스키마', () => {
+  it('OpenAI strict json_schema 규칙을 지킨다', () => {
+    assert.deepEqual(findStrictViolations(ANALYSIS_SCHEMA), []);
+    assert.deepEqual(findStrictViolations(SUMMARY_SCHEMA), []);
+  });
+
+  it('값이 없을 수 있는 필드는 null 을 허용한다', () => {
+    assert.deepEqual(ANALYSIS_SCHEMA.properties.new_note.type, ['string', 'null']);
+    assert.deepEqual(ANALYSIS_SCHEMA.properties.axis_hint.anyOf.at(-1), { type: 'null' });
+  });
+});
+
 describe('analyzeFeedback / summarizeNotes', () => {
-  it('Gemini 를 1번 부르고(temperature 0.3, JSON 스키마) 결과를 돌려준다', async () => {
+  it('OpenAI 를 1번 부르고(temperature 없음, reasoning low, JSON 스키마) 결과를 돌려준다', async () => {
     const { client, calls } = mockClient('{"new_note":"사실","axis_hint":null}');
     const result = await analyzeFeedback({ intent: '해석', actualReaction: '반응', learnedNotes: [] }, client);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].temperature, 0.3);
-    assert.equal((calls[0].responseSchema as { type: string }).type, 'OBJECT');
+    assert.ok(!('temperature' in calls[0]));
+    assert.equal(calls[0].reasoningEffort, 'low');
+    assert.equal(calls[0].schemaName, 'feedback_analysis');
+    assert.equal((calls[0].schema as { type: string }).type, 'object');
     assert.equal(calls[0].timeoutMs, 30_000);
     assert.equal(result.newNote, '사실');
   });
@@ -91,8 +108,9 @@ describe('analyzeFeedback / summarizeNotes', () => {
   it('요약: 메모를 보내고 summary 를 돌려주며, 빈 응답은 오류', async () => {
     const { client, calls } = mockClient('{"summary":"  합친 요약  "}');
     assert.equal(await summarizeNotes(['a', 'b'], client), '합친 요약');
-    assert.ok(calls[0].contents[0].parts[0].text.includes('- a'));
-    assert.ok(calls[0].systemInstruction.includes('1~2문장'));
+    assert.equal(calls[0].schemaName, 'notes_summary');
+    assert.ok(calls[0].messages[0].text.includes('- a'));
+    assert.ok(calls[0].instructions.includes('1~2문장'));
     await assert.rejects(summarizeNotes(['a'], mockClient('{"summary":"  "}').client));
     await assert.rejects(summarizeNotes(['a'], mockClient('{}').client));
     await assert.rejects(summarizeNotes(['a'], mockClient('nope').client));

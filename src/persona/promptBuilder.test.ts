@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { findStrictViolations } from '../ai/strictSchema.js';
 import { buildSystemPrompt, getResponseSchema, MAX_LEARNED_NOTES, RESPONSE_FIELDS } from './promptBuilder.js';
 import type { PromptInput } from './promptBuilder.js';
 
@@ -218,30 +219,27 @@ describe('getResponseSchema', () => {
   const schema = getResponseSchema();
 
   it('필드와 타입', () => {
-    assert.equal(schema.type, 'OBJECT');
+    assert.equal(schema.type, 'object');
     assert.deepEqual(Object.keys(schema.properties).sort(), [...RESPONSE_FIELDS].sort());
-    assert.equal(schema.properties.intent.type, 'STRING');
-    assert.equal(schema.properties.recommended_action.type, 'STRING');
-    assert.equal(schema.properties.suggested_message.type, 'STRING');
-    assert.equal(schema.properties.avoid.type, 'STRING');
-    assert.equal(schema.properties.safety_flag.type, 'BOOLEAN');
-    assert.equal(schema.properties.persona_basis.type, 'ARRAY');
-    assert.equal(schema.properties.persona_basis.items.type, 'STRING');
+    assert.equal(schema.properties.intent.type, 'string');
+    assert.equal(schema.properties.recommended_action.type, 'string');
+    assert.equal(schema.properties.suggested_message.type, 'string');
+    assert.equal(schema.properties.avoid.type, 'string');
+    assert.equal(schema.properties.safety_flag.type, 'boolean');
+    assert.equal(schema.properties.persona_basis.type, 'array');
+    assert.equal(schema.properties.persona_basis.items.type, 'string');
   });
 
   it('confidence 는 high/medium/low enum', () => {
-    assert.equal(schema.properties.confidence.type, 'STRING');
+    assert.equal(schema.properties.confidence.type, 'string');
     assert.deepEqual(schema.properties.confidence.enum, ['high', 'medium', 'low']);
   });
 
-  it('follow_up_question 은 nullable 이고 required 에서 빠진다', () => {
-    assert.equal(schema.properties.follow_up_question.type, 'STRING');
-    assert.equal(schema.properties.follow_up_question.nullable, true);
-    assert.ok(!schema.required.includes('follow_up_question' as never));
-    assert.deepEqual(
-      [...schema.required].sort(),
-      RESPONSE_FIELDS.filter((f) => f !== 'follow_up_question').sort(),
-    );
-    assert.equal(schema.required.length, 7);
+  it('strict: 모든 필드가 required 이고 additionalProperties 는 false, follow_up_question 만 null 을 허용한다', () => {
+    assert.equal(schema.additionalProperties, false);
+    assert.deepEqual([...schema.required], [...RESPONSE_FIELDS]);
+    assert.equal(schema.required.length, 8);
+    assert.deepEqual(schema.properties.follow_up_question.type, ['string', 'null']);
+    assert.deepEqual(findStrictViolations(schema), []);
   });
 });
