@@ -53,7 +53,7 @@ export interface DiaryAnalysisResult {
 }
 
 // 가입 때 저장되는 코드값 -> 한국어 설명. 모르는 값은 프롬프트에 넣지 않는다.
-const JOB_LABELS: Record<string, string> = {
+export const JOB_LABELS: Record<string, string> = {
   dev: '개발',
   design: '디자인',
   planning: '기획',
@@ -61,7 +61,7 @@ const JOB_LABELS: Record<string, string> = {
   finance: '금융',
   hr: '인사·총무',
 };
-const WORK_STYLE_LABELS: Record<string, string> = {
+export const WORK_STYLE_LABELS: Record<string, string> = {
   'asks-a-lot': '질문을 많이 하는 편',
   'solves-first': '혼자 먼저 해결해보는 편',
   meticulous: '꼼꼼하게 확인하는 편',
