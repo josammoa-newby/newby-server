@@ -277,6 +277,46 @@ Invoke-RestMethod -Method Patch -Uri "http://localhost:3000/api/me" `
 }
 ```
 
+## GET /api/me/stats
+
+`Authorization: Bearer <accessToken>` 헤더가 필요합니다. 경험치, 직급(레벨), 연속 기록을 돌려줍니다. 아직 경험치가 없으면 `xp: 0`, `level: 1` 입니다.
+
+```powershell
+Invoke-RestMethod "http://localhost:3000/api/me/stats" -Headers @{ Authorization = "Bearer $token" }
+```
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "xp": 120,
+    "level": 2,
+    "title": "사원",
+    "currentLevelXp": 50,
+    "nextLevelXp": 150,
+    "progress": 70,
+    "streak": 3,
+    "lastActiveDate": "2026-11-12"
+  },
+  "error": null
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| xp | 누적 경험치 |
+| level / title | 직급. 1 신입(0), 2 사원(50), 3 주임(150), 4 대리(300), 5 과장(500), 6 차장(800), 7 부장(1200) (괄호는 시작 경험치) |
+| currentLevelXp / nextLevelXp | 현재 직급 시작 경험치 / 다음 직급 경험치. 최고 직급이면 `nextLevelXp` 는 `null` |
+| progress | 다음 직급까지 진행률 0~100. 최고 직급이면 100 |
+| streak | 연속 기록 일수. 어제도 오늘도 활동이 없으면 0 |
+| lastActiveDate | 마지막으로 활동한 날 `YYYY-MM-DD` (없으면 `null`) |
+
+경험치는 일기 작성(하루 첫 일기 +10)과 미션 완료(미션마다 xp)로 오르고, 되돌리면 같은 만큼 내려갑니다.
+
+실패 (401) — 토큰이 없거나 유효하지 않은 경우 (`UNAUTHORIZED`)
+
 ## GET /api/persona/questions
 
 `Authorization: Bearer <accessToken>` 헤더가 필요합니다. 상사 성향 질문지를 돌려줍니다. 채점 정보(축, 역채점, 점수)는 포함되지 않습니다.
@@ -661,6 +701,206 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/messages/$message
 | 404 | SUPERVISOR_NOT_FOUND | 세션에 연결된 상사가 없거나 삭제됨 |
 | 409 | FEEDBACK_ALREADY_EXISTS | 이 메시지에는 이미 피드백이 있음 |
 | 429 | RATE_LIMITED | 분당 10회 초과 |
+
+## 일기 (diaries)
+
+모든 일기 API 는 `Authorization: Bearer <accessToken>` 헤더가 필요하고, 항상 토큰의 사용자 본인 일기만 다룹니다. 남의 일기나 없는 일기, 잘못된 id 형식은 모두 404 `DIARY_NOT_FOUND` 입니다. 날짜는 `YYYY-MM-DD` 입니다.
+
+일기 객체
+
+```json
+{
+  "id": "6f2a...",
+  "date": "2026-11-12",
+  "content": "오늘은 처음으로 회의에서 의견을 말했다. 긴장했지만 끝나고 나니 뿌듯했다.",
+  "mood": "뿌듯",
+  "source": "manual",
+  "messageId": null,
+  "createdAt": "2026-11-12T00:00:00.000Z",
+  "updatedAt": "2026-11-12T00:00:00.000Z",
+  "analysis": null
+}
+```
+
+`analysis` 는 AI 분석 결과이고, 아직 분석하지 않았거나 `content`/`mood` 가 수정돼 비워졌으면 `null` 입니다. 모양은 아래 `POST /api/diaries/:id/analyze` 를 보세요. 분석을 저장하면 `updatedAt` 도 함께 갱신됩니다.
+
+### POST /api/diaries
+
+| 필드 | 필수 | 규칙 |
+| --- | --- | --- |
+| content | O | 앞뒤 공백 제거 후 1~2000자 |
+| date | | `YYYY-MM-DD`. 없으면 한국 시간 기준 오늘 |
+| mood | | 20자 이하 문자열. 빈 문자열이면 `null` |
+| source | | `manual`(기본) 또는 `ai_message` |
+| messageId | source 가 `ai_message` 일 때 O | AI 답변 메시지 id (uuid) |
+
+```powershell
+$body = @{ content = "오늘은 처음으로 회의에서 의견을 말했다. 긴장했지만 끝나고 나니 뿌듯했다."; mood = "뿌듯" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/diaries" `
+  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json; charset=utf-8" `
+  -Body ([Text.Encoding]::UTF8.GetBytes($body))
+```
+
+성공 (201) — 일기 객체에 `reward` 가 더해집니다. 그날 첫 일기면 경험치 +10 지급 결과(`{ stats, gainedXp, leveledUp }`, `stats` 는 `GET /api/me/stats` 와 같은 모양)이고, 아니면 `null` 입니다.
+
+실패 (400) — 값 검증 실패 (`VALIDATION_ERROR`)
+
+### GET /api/diaries
+
+| 쿼리 | 설명 |
+| --- | --- |
+| from / to | 날짜 범위 (포함). `from` 이 `to` 보다 이후면 400 |
+| limit | 1~100, 기본 30 |
+
+성공 (200) — 일기 객체 배열. 날짜 내림차순이고, 같은 날은 최근에 쓴 것이 먼저입니다.
+
+### GET /api/diaries/:id
+
+성공 (200) — 일기 객체. 실패 (404) `DIARY_NOT_FOUND`
+
+### PATCH /api/diaries/:id
+
+보낸 필드(`date`, `content`, `mood`)만 수정되고 최소 1개는 있어야 합니다. 규칙은 작성과 같습니다. `mood` 에 `null` 이나 빈 문자열을 보내면 지웁니다.
+
+**`content` 나 `mood` 의 값이 실제로 바뀌면 `analysis` 가 `null` 로 초기화됩니다.** 같은 값을 다시 보내거나 `date` 만 바꾸면 분석이 유지됩니다.
+
+성공 (200) — 수정된 일기 객체. 실패 (400) `VALIDATION_ERROR`, (404) `DIARY_NOT_FOUND`
+
+### DELETE /api/diaries/:id
+
+성공 (200) — `{ "id": "..." }`. 그날 일기가 하나도 안 남으면 첫 일기 경험치(-10)가 되돌려집니다. 실패 (404) `DIARY_NOT_FOUND`
+
+### POST /api/diaries/:id/analyze
+
+일기를 AI 가 분석해서 성장 방향을 돌려줍니다. 사용자당 분당 10회로 제한되고, 저장된 분석을 그대로 돌려주는 요청도 횟수에 포함됩니다.
+
+- 이미 `analysis` 가 있으면(일기가 그대로라는 뜻) AI 를 부르지 않고 저장된 값을 돌려줍니다. (`reused: true`)
+- 요청 본문 `{ "force": true }` 를 보내면 저장된 분석이 있어도 다시 분석합니다. 본문은 생략할 수 있고, `force` 는 boolean 이어야 합니다.
+- 앞뒤 공백을 뺀 일기가 20자 미만이면 분석하지 않고 400 `DIARY_TOO_SHORT` 입니다.
+- 분석에는 일기 `content`, `mood` 와 프로필의 직무(`job`), 일하는 방식(`workStyle`)이 쓰입니다. 일기 원문과 분석 결과는 서버 로그에 남기지 않습니다.
+
+```powershell
+$res = Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/diaries/$diaryId/analyze" `
+  -Headers @{ Authorization = "Bearer $token" }
+$res.data.analysis
+```
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "6f2a...",
+    "analysis": {
+      "summary": "회의에서 처음으로 의견을 말해 뿌듯했던 하루예요.",
+      "emotion": "뿌듯함",
+      "strengths": ["긴장 속에서도 의견을 말했어요"],
+      "growthPoints": ["회의 전에 핵심 한 줄을 정리해 보세요"],
+      "nextStep": "내일 회의 전에 하고 싶은 말을 한 줄로 적어 보세요.",
+      "safetyFlag": false,
+      "model": "gpt-6-luna",
+      "generatedAt": "2026-11-12T01:25:05.000Z"
+    },
+    "reused": false
+  },
+  "error": null
+}
+```
+
+| analysis 필드 | 설명 |
+| --- | --- |
+| summary | 일기 요약 1~2문장 |
+| emotion | 핵심 감정 한 단어 |
+| strengths | 오늘 잘한 점 1~3개 (`safetyFlag` 가 true 면 0~3개) |
+| growthPoints | 내일 더 성장할 수 있는 방향 1~3개 (`safetyFlag` 가 true 면 0~3개) |
+| nextStep | 내일 해볼 작은 행동 한 가지 |
+| safetyFlag | 자해·자살·심각한 괴롭힘 등이 언급되면 `true` |
+| model | 분석에 쓴 모델 |
+| generatedAt | 분석을 저장한 시각 |
+
+`safetyFlag` 가 `true` 면 `strengths`, `growthPoints` 는 짧은 지지 문구 중심이거나 비어 있고, `nextStep` 뒤에 서버가 고정 안내 문구("혼자 감당하기 어렵다면 자살예방 상담전화 109(24시간)나 가까운 전문 상담 기관에 꼭 이야기해 보세요.")를 붙입니다. 이 문구는 모델이 아니라 서버가 붙입니다.
+
+| status | code | 설명 |
+| --- | --- | --- |
+| 400 | VALIDATION_ERROR | `force` 가 boolean 이 아니거나 본문이 올바르지 않음 |
+| 400 | DIARY_TOO_SHORT | 일기가 20자 미만 |
+| 401 | UNAUTHORIZED | 토큰이 없거나 유효하지 않음 |
+| 404 | DIARY_NOT_FOUND | 내 일기가 아니거나 없는 일기, 잘못된 id 형식 (분석 도중 삭제된 경우도 포함) |
+| 409 | DIARY_CHANGED | 분석하는 동안 일기의 `content`/`mood` 가 수정됨. 오래된 분석은 저장하지 않으니 다시 요청 |
+| 429 | RATE_LIMITED | 분당 10회 초과 |
+| 500 | AI_NOT_CONFIGURED | 서버에 OpenAI 키가 설정되지 않음 |
+| 502 | AI_UNAVAILABLE | OpenAI 호출 실패 또는 30초 초과 |
+| 502 | AI_RESPONSE_INVALID | AI 응답이 규칙에 맞지 않아 1회 재시도했지만 실패, 또는 모델이 답변을 거절함 |
+
+## 미션 (missions)
+
+모든 미션 API 는 `Authorization: Bearer <accessToken>` 헤더가 필요하고, 본인 미션만 다룹니다. 없는 미션이나 잘못된 id 형식은 404 `MISSION_NOT_FOUND` 입니다.
+
+미션 객체: `{ "id": "...", "date": "2026-11-12", "title": "...", "done": false, "xp": 10, "createdAt": "..." }`
+
+### GET /api/missions
+
+| 쿼리 | 설명 |
+| --- | --- |
+| date | `YYYY-MM-DD`. 없으면 한국 시간 기준 오늘 |
+
+날짜별 미션을 돌려줍니다. **오늘(한국 시간) 미션이 하나도 없으면 서버가 기본 미션 3개(각 xp 10)를 만들어 줍니다.** 지난 날짜나 미래 날짜는 만들지 않고 빈 배열을 돌려줍니다.
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "date": "2026-11-12",
+    "missions": [
+      { "id": "...", "date": "2026-11-12", "title": "출근 후 오늘 할 일 3가지 적어보기", "done": false, "xp": 10, "createdAt": "..." }
+    ],
+    "doneCount": 0,
+    "total": 3
+  },
+  "error": null
+}
+```
+
+미션은 만든 시각 순이며, 한 번에 만든 미션(기본 미션 등)은 시각이 같아 순서가 바뀔 수 있습니다.
+
+실패 (400) — `date` 형식 오류 (`VALIDATION_ERROR`)
+
+### POST /api/missions
+
+| 필드 | 필수 | 규칙 |
+| --- | --- | --- |
+| title | O | 앞뒤 공백 제거 후 1~100자 |
+| xp | | 1~100 정수, 기본 10 |
+| date | | `YYYY-MM-DD`, 기본 한국 시간 기준 오늘 |
+
+성공 (201) — 미션 객체. 실패 (400) `VALIDATION_ERROR`
+
+### PATCH /api/missions/:id
+
+요청 body: `{ "done": true }` (boolean 필수). 완료로 체크하면 미션의 xp 만큼 경험치가 오르고, 해제하면 같은 만큼 내려갑니다. 이미 같은 값이면 경험치는 바뀌지 않습니다(체크/해제를 반복해도 경험치를 쌓을 수 없습니다).
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "mission": { "id": "...", "date": "2026-11-12", "title": "...", "done": true, "xp": 10, "createdAt": "..." },
+    "changed": true,
+    "reward": { "stats": { "xp": 10, "level": 1, "title": "신입", "currentLevelXp": 0, "nextLevelXp": 50, "progress": 20, "streak": 1, "lastActiveDate": "2026-11-12" }, "gainedXp": 10, "leveledUp": false }
+  },
+  "error": null
+}
+```
+
+`changed` 는 `done` 값이 실제로 바뀌었는지이고, 바뀌지 않았으면 `reward` 는 `null` 입니다. 실패 (400) `VALIDATION_ERROR`, (404) `MISSION_NOT_FOUND`
+
+### DELETE /api/missions/:id
+
+성공 (200) — `{ "id": "..." }`. 실패 (404) `MISSION_NOT_FOUND`
 
 ## 인증이 필요한 다른 API 에서 재사용
 

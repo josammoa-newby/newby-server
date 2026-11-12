@@ -100,6 +100,15 @@ export function validateDiaryPatch(body: unknown): DiaryPatchInput {
   return patch;
 }
 
+// POST /api/diaries/:id/analyze 본문. 본문이 없어도 된다. force 가 true 면 저장된 분석이 있어도 다시 분석한다.
+export function validateAnalyzeBody(body: unknown): { force: boolean } {
+  if (body === undefined || body === null) return { force: false };
+  if (!isObject(body)) invalid('요청 본문이 올바르지 않습니다.');
+  if (body.force === undefined) return { force: false };
+  if (typeof body.force !== 'boolean') invalid('force 는 true 또는 false 여야 합니다.');
+  return { force: body.force };
+}
+
 export function validateDiaryListQuery(query: unknown): DiaryListQuery {
   const q = isObject(query) ? query : {};
   const result: DiaryListQuery = { limit: DEFAULT_LIMIT };
