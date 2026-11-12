@@ -1,6 +1,6 @@
 # Newby Server
 
-사회초년생 대상 AI 직장 성장 코칭 앱의 백엔드 (Node.js / Express / TypeScript / Supabase / Gemini 2.5 Flash)
+사회초년생 대상 AI 직장 성장 코칭 앱의 백엔드 (Node.js / Express / TypeScript / Supabase / OpenAI gpt-6-luna)
 
 ## 실행 방법
 
@@ -23,9 +23,26 @@ npx tsc --noEmit       # 타입 검사 (커밋 전 필수)
 | PORT | 서버 포트 (기본 3000) |
 | SUPABASE_URL | Supabase 프로젝트 URL (필수) |
 | SUPABASE_SERVICE_ROLE_KEY | Supabase service role 키 (필수) |
-| GEMINI_API_KEY | Gemini API 키 (AI 기능 연동 시 사용) |
+| OPENAI_API_KEY | OpenAI API 키 (AI 기능 사용 시. 없으면 AI 호출만 500 `AI_NOT_CONFIGURED`) |
+| OPENAI_MODEL | OpenAI 모델 (선택, 기본 `gpt-6-luna`. 구조화 출력을 지원하는 모델이어야 함) |
+| OPENAI_REASONING_EFFORT | reasoning.effort (선택, 기본 `low`. `none` `low` `medium` `high` `xhigh` `max`) |
 
 필수 값이 없으면 서버 시작 시 에러가 납니다. `.env` 는 절대 커밋하지 않습니다.
+
+### Render 환경변수 변경 (Gemini → OpenAI)
+
+AI 를 Gemini 에서 OpenAI 로 바꿨습니다. 이미 만들어 둔 Render 서비스는 `render.yaml` 이 자동으로 반영되지 않으므로 대시보드 Environment 에서 직접 바꿉니다.
+
+- 삭제: `GEMINI_API_KEY`, `GEMINI_MODEL`
+- 추가: `OPENAI_API_KEY` (필수), `OPENAI_MODEL` (선택), `OPENAI_REASONING_EFFORT` (선택)
+
+### AI 확인 스크립트
+
+```bash
+npm run ai:smoke                                   # 실제 호출 1회로 json_schema strict 응답 확인 (통과/실패, 지연 시간만 출력)
+OPENAI_MODEL=gpt-6.1-terra npm run ai:smoke        # 다른 모델로 확인
+npm run persona:eval -- --judge --interval 3000    # 페르소나 품질 평가 (케이스 x 상사 호출 + 평가자)
+```
 
 ## API 규칙
 

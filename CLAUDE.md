@@ -1,6 +1,6 @@
 # Newby Server
 
-사회초년생 대상 AI 직장 성장 코칭 앱의 백엔드 (Node.js / Express / TypeScript / Supabase / Gemini 2.5 Flash)
+사회초년생 대상 AI 직장 성장 코칭 앱의 백엔드 (Node.js / Express / TypeScript / Supabase / OpenAI gpt-6-luna)
 
 ## 규칙
 
