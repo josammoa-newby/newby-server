@@ -17,6 +17,7 @@ import {
   TIMEOUT_MS,
   toMessages,
   toPromptInput,
+  withFollowUp,
 } from './situation.js';
 import { findStrictViolations } from './strictSchema.js';
 import type { HistoryMessage } from './situation.js';
@@ -150,6 +151,26 @@ describe('toMessages', () => {
         ['user', '지금'],
       ],
     );
+  });
+
+  it('후속 질문이 있는 ai 메시지는 끝에 되물은 질문이 붙는다', () => {
+    const history: HistoryMessage[] = [
+      { role: 'user', text: '상사가 한숨 쉬었어' },
+      { role: 'ai', text: '요약1\n행동1', payload: { follow_up_question: '구체적으로 한 말이 있었어?' } },
+    ];
+    assert.deepEqual(toMessages(history, '아니, 구체적인 말 없었어'), [
+      { role: 'user', text: '상사가 한숨 쉬었어' },
+      { role: 'assistant', text: '요약1\n행동1\n(내가 사용자에게 되물은 질문) 구체적으로 한 말이 있었어?' },
+      { role: 'user', text: '아니, 구체적인 말 없었어' },
+    ]);
+  });
+
+  it('payload 가 null/깨짐이거나 follow_up_question 이 null/빈 문자열이면 기존 그대로', () => {
+    const base = { role: 'ai' as const, text: '요약' };
+    for (const payload of [null, undefined, 'x', 3, [], {}, { follow_up_question: null }, { follow_up_question: '' }, { follow_up_question: '  ' }, { follow_up_question: 5 }]) {
+      assert.equal(withFollowUp({ ...base, payload }, '요약'), '요약');
+    }
+    assert.equal(withFollowUp({ role: 'user', text: 'q', payload: { follow_up_question: '질문' } }, 'q'), 'q');
   });
 
   it('history 가 비어 있으면 userText 만', () => {

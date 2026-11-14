@@ -24,6 +24,8 @@ const CONFIDENCES = ['high', 'medium', 'low'] as const;
 export interface HistoryMessage {
   role: 'user' | 'ai';
   text: string | null;
+  // ai 메시지의 답변 카드(AiAnswer). 이력을 AI 에 넘길 때 follow_up_question 만 꺼내 쓴다. 깨진 값이어도 무시한다.
+  payload?: unknown;
 }
 
 export interface AiAnswer {
@@ -63,6 +65,18 @@ export function toPromptInput(row: SupervisorRow): PromptInput {
   };
 }
 
+export const FOLLOW_UP_LABEL = '(내가 사용자에게 되물은 질문)';
+
+// ai 메시지에 비어 있지 않은 follow_up_question 이 있으면 내용 끝에 줄바꿈 후 덧붙인다. 저장값은 바꾸지 않는다.
+export function withFollowUp(message: HistoryMessage, text: string): string {
+  if (message.role !== 'ai') return text;
+  const payload = message.payload;
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return text;
+  const followUp = (payload as Record<string, unknown>).follow_up_question;
+  if (typeof followUp !== 'string' || followUp.trim() === '') return text;
+  return `${text}\n${FOLLOW_UP_LABEL} ${followUp.trim()}`;
+}
+
 // 최근 MAX_HISTORY 개만 쓰고 ai -> assistant 로 바꾼다. 맨 앞의 assistant 턴(첫 인사 등)은 빼서 user 턴으로 시작하게 한다.
 export function toMessages(history: HistoryMessage[], userText: string): AiMessage[] {
   const turns: AiMessage[] = history
@@ -70,7 +84,7 @@ export function toMessages(history: HistoryMessage[], userText: string): AiMessa
     .filter((message) => message.text !== null && message.text.trim() !== '')
     .map((message) => ({
       role: message.role === 'ai' ? 'assistant' : 'user',
-      text: message.text as string,
+      text: withFollowUp(message, message.text as string),
     }));
   while (turns.length > 0 && turns[0].role === 'assistant') turns.shift();
   return [...turns, { role: 'user', text: userText }];
