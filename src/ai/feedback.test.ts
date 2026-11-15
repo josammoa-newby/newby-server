@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { scorePersona } from '../persona/scoring.js';
+import type { Answers } from '../persona/types.js';
 import type { GenerateJsonParams, OpenAiClient } from './openai.js';
 import {
   ANALYSIS_SCHEMA,
+  AXIS_DIRECTIONS,
   analyzeFeedback,
   buildAnalysisContent,
   buildAnalysisSystemPrompt,
@@ -12,6 +15,11 @@ import {
   summarizeNotes,
 } from './feedback.js';
 import { findStrictViolations } from './strictSchema.js';
+
+// 네 핵심 축이 모두 점수 ≥ 0 (앞 글자)이 되는 응답
+const ALL_PLUS: Answers = {
+  L1: 5, L2: 1, S1: 'a', L5: 5, L6: 1, S2: 'a', L9: 5, L10: 1, S3: 'a', L13: 1, L14: 5, S4: 'a',
+};
 
 function mockClient(raw: string | Error) {
   const calls: GenerateJsonParams[] = [];
@@ -65,6 +73,35 @@ describe('프롬프트', () => {
     // 메모 안에서 구획을 닫는 태그는 제거된다
     assert.equal(prompt.split('</learned_notes>').length - 1, 1);
     assert.ok(buildAnalysisSystemPrompt([]).includes('(없음)'));
+  });
+
+  it('축별 dir 방향(앞 글자 +1, 뒤 글자 -1)과 warmth 예시가 들어간다', () => {
+    const prompt = buildAnalysisSystemPrompt([]);
+    const expected: Record<string, [string, string]> = {
+      directness: ['D 직설형', 'I 돌려말형'],
+      control: ['C 디테일·통제형', 'A 자율·위임형'],
+      reporting: ['R 결론 중심', 'P 과정 중심'],
+      warmth: ['T 업무 위주', 'W 관계·정서형'],
+      speed: ['즉시형', '여유형'],
+      stability: ['안정형', '기복형'],
+    };
+    for (const [axis, [plus, minus]] of Object.entries(expected)) {
+      const line = prompt.split('\n').find((l) => l.startsWith(`- ${axis}:`));
+      assert.ok(line, axis);
+      assert.ok(line.indexOf(`+1 = ${plus}`) !== -1, `${axis} +1`);
+      assert.ok(line.indexOf(`-1 = ${minus}`) !== -1, `${axis} -1`);
+    }
+    assert.ok(prompt.includes('"더 따뜻하게 반응했다, 다정했다, 먼저 위로했다" → warmth -1'));
+    assert.ok(prompt.includes('"더 사무적이고 건조했다, 일 얘기만 했다" → warmth +1'));
+    assert.ok(prompt.includes('warmth 는 +1 이 "더 따뜻함"이 아니라 T(업무 위주)'));
+  });
+
+  it('AXIS_DIRECTIONS 의 글자가 scoring 의 letter 와 같은 순서(앞=점수 ≥ 0)다', () => {
+    const plus = scorePersona(ALL_PLUS);
+    for (const axis of ['directness', 'control', 'reporting', 'warmth'] as const) {
+      const letter = plus[axis]!.letter;
+      assert.ok(AXIS_DIRECTIONS[axis].plus.startsWith(letter), `${axis} ${letter}`);
+    }
   });
 
   it('AI 해석과 실제 반응이 각각 태그로 감싸진다', () => {
