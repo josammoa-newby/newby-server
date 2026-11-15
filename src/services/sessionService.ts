@@ -5,6 +5,7 @@ import { AppError } from '../lib/AppError.js';
 import * as sessionRepository from '../repositories/sessionRepository.js';
 import type { MessageRow, SessionRow } from '../repositories/sessionRepository.js';
 import * as supervisorRepository from '../repositories/supervisorRepository.js';
+import type { SessionListQuery } from './sessionValidation.js';
 import { isUuid } from './supervisorValidation.js';
 
 export interface SessionView {
@@ -56,6 +57,12 @@ export async function createSession(
     null,
   );
   return { session: toSession(session), messages: [toMessage(greeting)] };
+}
+
+// supervisorId 가 내 상사가 아니어도 404 대신 빈 배열이다. (user_id 로 한정한 조회라 남의 세션은 나오지 않는다)
+export async function listSessions(userId: string, query: SessionListQuery): Promise<{ sessions: SessionView[] }> {
+  const rows = await sessionRepository.listSessions(userId, query.supervisorId, query.limit);
+  return { sessions: rows.map(toSession) };
 }
 
 export async function getSession(

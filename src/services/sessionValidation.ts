@@ -2,6 +2,8 @@ import { AppError } from '../lib/AppError.js';
 import { isUuid } from './supervisorValidation.js';
 
 export const MAX_MESSAGE_LENGTH = 1000;
+export const DEFAULT_LIST_LIMIT = 20;
+export const MAX_LIST_LIMIT = 50;
 
 function invalid(message: string): never {
   throw new AppError(400, 'VALIDATION_ERROR', message);
@@ -37,4 +39,27 @@ export function validateMessage(body: unknown): { text: string } {
     invalid(`메시지는 ${MAX_MESSAGE_LENGTH}자 이하로 입력해주세요`);
   }
   return { text };
+}
+
+export interface SessionListQuery {
+  supervisorId?: string;
+  limit: number;
+}
+
+// supervisorId 는 uuid 형식이어야 한다. (형식이 틀리면 400, 내 상사가 아니면 서비스가 빈 배열로 답한다)
+export function validateSessionListQuery(query: unknown): SessionListQuery {
+  const q = typeof query === 'object' && query !== null && !Array.isArray(query) ? (query as Record<string, unknown>) : {};
+  const result: SessionListQuery = { limit: DEFAULT_LIST_LIMIT };
+  if (q.supervisorId !== undefined) {
+    if (!isUuid(q.supervisorId)) invalid('supervisorId 형식이 올바르지 않아요');
+    result.supervisorId = q.supervisorId;
+  }
+  if (q.limit !== undefined) {
+    const n = typeof q.limit === 'string' && /^\d+$/.test(q.limit) ? Number(q.limit) : NaN;
+    if (!Number.isInteger(n) || n < 1 || n > MAX_LIST_LIMIT) {
+      invalid(`limit 은 1~${MAX_LIST_LIMIT} 사이 정수여야 해요`);
+    }
+    result.limit = n;
+  }
+  return result;
 }

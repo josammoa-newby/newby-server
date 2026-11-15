@@ -617,6 +617,43 @@ $sessionId = $res.data.session.id
 
 `AI_UNAVAILABLE`, `AI_RESPONSE_INVALID` 일 때도 사용자의 메시지는 저장된 상태로 남습니다. 같은 문장을 다시 보내면 사용자 메시지가 중복 저장됩니다.
 
+## GET /api/sessions
+
+`Authorization: Bearer <accessToken>` 헤더가 필요합니다. 내 상담 세션 목록을 최신순(`createdAt` 내림차순)으로 돌려줍니다. 클라이언트가 상사별 최근 대화를 복원할 때 씁니다. 메시지는 포함되지 않으니, 대화 내용은 `GET /api/sessions/:id` 로 가져옵니다. 호출 횟수 제한은 없습니다.
+
+| 쿼리 | 필수 | 규칙 |
+| --- | --- | --- |
+| supervisorId | | 상사 id(uuid). 있으면 그 상사의 세션만 돌려줍니다 |
+| limit | | 1~50 정수. 기본 20 |
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/api/sessions?supervisorId=$supervisorId&limit=5" `
+  -Headers @{ Authorization = "Bearer $token" }
+```
+
+성공 (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "sessions": [
+      { "id": "9fba...", "supervisorId": "5b1c...", "title": "김팀장 상담", "createdAt": "2026-10-24T09:00:00.000Z" },
+      { "id": "1e07...", "supervisorId": "5b1c...", "title": "김팀장 상담", "createdAt": "2026-10-20T01:30:00.000Z" }
+    ]
+  },
+  "error": null
+}
+```
+
+- 세션이 없으면 `sessions` 는 빈 배열입니다.
+- `supervisorId` 가 내 상사가 아니거나 없는 상사여도 404 가 아니라 빈 배열로 답합니다. (상사 존재 여부를 알려주지 않습니다)
+- 다른 사용자의 세션은 나오지 않습니다.
+
+실패 (400) — `supervisorId` 가 uuid 형식이 아니거나 `limit` 이 1~50 정수가 아님 (`VALIDATION_ERROR`)
+
+실패 (401) — 토큰이 없거나 유효하지 않음 (`UNAUTHORIZED`)
+
 ## GET /api/sessions/:id
 
 `Authorization: Bearer <accessToken>` 헤더가 필요합니다. 내 세션의 정보와 메시지를 시간순으로 돌려줍니다.

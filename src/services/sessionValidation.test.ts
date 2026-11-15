@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { AppError } from '../lib/AppError.js';
-import { MAX_MESSAGE_LENGTH, validateCreateSession, validateMessage } from './sessionValidation.js';
+import {
+  DEFAULT_LIST_LIMIT,
+  MAX_LIST_LIMIT,
+  MAX_MESSAGE_LENGTH,
+  validateCreateSession,
+  validateMessage,
+  validateSessionListQuery,
+} from './sessionValidation.js';
 
 function rejects(fn: () => unknown, status: number, code: string) {
   assert.throws(fn, (err: unknown) => err instanceof AppError && err.status === status && err.code === code);
@@ -38,5 +45,34 @@ describe('validateCreateSession', () => {
     rejects(() => validateCreateSession({ supervisorId: '  ' }), 400, 'VALIDATION_ERROR');
     rejects(() => validateCreateSession(undefined), 400, 'VALIDATION_ERROR');
     rejects(() => validateCreateSession({ supervisorId: 'not-a-uuid' }), 404, 'SUPERVISOR_NOT_FOUND');
+  });
+});
+
+describe('validateSessionListQuery', () => {
+  const SID = '5b1c2d3e-0000-4000-8000-000000000001';
+
+  it('쿼리가 없으면 limit 기본 20, supervisorId 없음', () => {
+    assert.equal(DEFAULT_LIST_LIMIT, 20);
+    assert.deepEqual(validateSessionListQuery({}), { limit: 20 });
+    assert.deepEqual(validateSessionListQuery(undefined), { limit: 20 });
+  });
+
+  it('supervisorId 필터와 limit 을 읽는다', () => {
+    assert.deepEqual(validateSessionListQuery({ supervisorId: SID, limit: '5' }), { supervisorId: SID, limit: 5 });
+    assert.equal(validateSessionListQuery({ limit: '1' }).limit, 1);
+    assert.equal(MAX_LIST_LIMIT, 50);
+    assert.equal(validateSessionListQuery({ limit: '50' }).limit, 50);
+  });
+
+  it('limit 이 0, 51 초과, 정수가 아니면 400', () => {
+    for (const limit of ['0', '51', '-1', '1.5', 'abc', '', '1e1', ['5'], 5]) {
+      rejects(() => validateSessionListQuery({ limit }), 400, 'VALIDATION_ERROR');
+    }
+  });
+
+  it('supervisorId 가 uuid 가 아니면 400', () => {
+    for (const supervisorId of ['abc', '', [SID], 5]) {
+      rejects(() => validateSessionListQuery({ supervisorId }), 400, 'VALIDATION_ERROR');
+    }
   });
 });
