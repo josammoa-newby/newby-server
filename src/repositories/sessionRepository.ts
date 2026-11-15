@@ -79,3 +79,12 @@ export async function listRecentMessages(sessionId: string, limit: number): Prom
   if (error) throw error;
   return (data ?? []).reverse();
 }
+
+// 내 세션만, 최신순. supervisorId 가 있으면 그 상사의 세션만. (user_id 로 항상 한정)
+export async function listSessions(userId: string, supervisorId: string | undefined, limit: number): Promise<SessionRow[]> {
+  let query = supabase.from('ai_sessions').select(SESSION_COLUMNS).eq('user_id', userId);
+  if (supervisorId) query = query.eq('supervisor_id', supervisorId);
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(limit).returns<SessionRow[]>();
+  if (error) throw error;
+  return data ?? [];
+}
